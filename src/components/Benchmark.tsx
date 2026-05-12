@@ -1,0 +1,595 @@
+import { useState, useCallback, useEffect } from "react";
+import {
+  FlaskConical, Square, RotateCcw, Download,
+  CheckCircle2, XCircle, Clock, Loader2, FileText,
+  AlertTriangle, Zap, ChevronDown, ChevronRight,
+  Cloud, HardDrive, ShieldCheck, ShieldX, Maximize2, X
+} from "lucide-react";
+import { useBenchmark, verifyScenario } from "../hooks/useBenchmark";
+import { getPdfPageCount } from "../lib/pdfUtils";
+import { BenchmarkConsole } from "./BenchmarkConsole";
+import type { BenchmarkScenario, BenchmarkResult, BenchmarkStatus } from "../lib/utils/types";
+
+// ── Formatters ─────────────────────────────────────────────────────────────────
+const fmt = (ms?: number) => ms === undefined ? "—" : ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;
+const fmtKb = (kb?: number) => kb === undefined ? "—" : kb < 1024 ? `${kb.toFixed(1)}KB` : `${(kb / 1024).toFixed(2)}MB`;
+const fmtCost = (usd?: number) => usd === undefined ? "—" : `$${usd.toFixed(5)}`;
+const fmtNum = (n?: number) => n === undefined ? "—" : n.toLocaleString();
+
+function findBestId(results: BenchmarkResult[]): string | null {
+  const done = results.filter(r => r.status === "done" && r.totalDurationMs !== undefined);
+  if (!done.length) return null;
+  return done.reduce((a, b) => a.totalDurationMs! < b.totalDurationMs! ? a : b).scenarioId;
+}
+function findCheapestId(results: BenchmarkResult[]): string | null {
+  const done = results.filter(r => r.status === "done" && r.estimatedCostUsd !== undefined);
+  if (!done.length) return null;
+  return done.reduce((a, b) => a.estimatedCostUsd! < b.estimatedCostUsd! ? a : b).scenarioId;
+}
+
+function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
+  const headers = [
+    "Scenario", "Status", "Model", "Execution Mode", "Pages OK", "Pages Failed", "Total Duration",
+    "Avg TTFT", "Min TTFT", "Max TTFT", "StdDev TTFT",
+    "TPS", 
+    "Avg Upload", "Min Upload", "Max Upload", "StdDev Upload",
+    "Prompt Tokens", "Completion Tokens", "Avg Tokens/Page",
+    "Avg Payload KB", "Avg Image KB", "Payload Efficiency", "Est. Cost USD", "Total Output Chars", "Resolution", "Error"
+  ];
+  const rows = results.map((r: BenchmarkResult) => [
+    r.label, r.status, r.modelUsed || model, r.isParallel ? "Parallel" : "Sequential", r.pagesProcessed, r.pagesFailed,
+    r.totalDurationMs ?? "", 
+    r.avgTtftMs?.toFixed(0) ?? "", r.minTtftMs?.toFixed(0) ?? "", r.maxTtftMs?.toFixed(0) ?? "", r.stdDevTtftMs?.toFixed(0) ?? "",
+    r.tps?.toFixed(1) ?? "0", 
+    r.avgUploadMs?.toFixed(0) ?? "", r.minUploadMs?.toFixed(0) ?? "", r.maxUploadMs?.toFixed(0) ?? "", r.stdDevUploadMs?.toFixed(0) ?? "",
+    r.promptTokens ?? "", r.completionTokens ?? "", r.avgTokensPerPage ?? "",
+    r.avgPayloadKb?.toFixed(2) ?? "", r.avgImageSizeKb?.toFixed(2) ?? "", 
+    r.avgPayloadEfficiency !== undefined ? `${r.avgPayloadEfficiency.toFixed(1)}%` : "",
+    r.estimatedCostUsd?.toFixed(6) ?? "",
+    r.totalOutputChars ?? "", 
+    r.pageResults[0] ? `${r.pageResults[0].width}x${r.pageResults[0].height}` : "—",
+    r.errorMessage ?? ""
+  ]);
+  const csv = [headers, ...rows].map(row =>
+    row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")
+  ).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `benchmark-${pages}pages-${Date.now()}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Live Timer for active tasks ──────────────────────────────────────────
+function LiveTimer({ startTime }: { startTime: number }) {
+  const [elapsed, setElapsed] = useState(0);
+  
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsed(performance.now() - startTime);
+    }, 100);
+    return () => clearInterval(timer);
+  }, [startTime]);
+
+  return <span className="tabular-nums opacity-80">{fmt(elapsed)}</span>;
+}
+
+// ── Status badge ───────────────────────────────────────────────────────────────
+function StatusBadge({ status, currentTask, taskStartTime }: { status: BenchmarkStatus; currentTask?: string; taskStartTime?: number }) {
+  const map: Record<BenchmarkStatus, { icon: React.ReactNode; cls: string; label: string }> = {
+    pending: { icon: <Clock size={11} />, cls: "text-muted-foreground bg-secondary border-muted-foreground/20", label: "Pending" },
+    running: { icon: <Loader2 size={11} className="animate-spin" />, cls: "text-blue-400 bg-blue-400/10 border-blue-400/20", label: "Running…" },
+    done: { icon: <CheckCircle2 size={11} />, cls: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20", label: "Done" },
+    error: { icon: <XCircle size={11} />, cls: "text-rose-400 bg-rose-400/10 border-rose-400/20", label: "Error" },
+    skipped: { icon: <AlertTriangle size={11} />, cls: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20", label: "Skipped" },
+  };
+  const { icon, cls, label } = map[status];
+  return (
+    <div className="flex flex-col gap-1">
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-none text-[10px] font-bold border ${cls}`}>
+        {icon}{label}
+      </span>
+      {status === "running" && currentTask && (
+        <div className="flex items-center gap-2 text-[9px] text-blue-400/70 font-mono whitespace-nowrap animate-in fade-in slide-in-from-left-1">
+          <span className="shrink-0">└ {currentTask}</span>
+          {taskStartTime && <LiveTimer startTime={taskStartTime} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Scenario row (with expand for per-page detail) ─────────────────────────────
+function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkResult; isBest: boolean; isCheapest: boolean; isCompact?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const rowCls = r.status === "running" ? "bg-blue-500/5"
+    : isBest ? "bg-emerald-500/5"
+      : r.status === "error" ? "bg-destructive/5"
+        : r.status === "skipped" ? "opacity-50" : "";
+  const hasPages = r.pageResults.length > 0;
+
+  const tdCls = isCompact ? "px-2 py-2" : "px-4 py-4";
+  const textCls = isCompact ? "text-[10px]" : "text-sm";
+  const labelCls = isCompact ? "text-[10px]" : "text-sm";
+
+  return (
+    <>
+      <tr className={`transition-colors border-b border-white/2 ${rowCls}`}>
+        <td className={`${tdCls} font-bold`}>
+          <div className="flex items-center gap-1.5">
+            {hasPages && (
+              <button onClick={() => setExpanded(e => !e)} className="text-muted-foreground/40 hover:text-primary transition-colors shrink-0">
+                {expanded ? <ChevronDown size={isCompact ? 12 : 16} /> : <ChevronRight size={isCompact ? 12 : 16} />}
+              </button>
+            )}
+            <span className={`${labelCls} leading-tight ${isBest ? "text-emerald-400" : isCheapest ? "text-amber-400" : "text-foreground/90"}`}>
+              {isBest && "> "}
+              {r.label}
+            </span>
+          </div>
+          {r.errorMessage && (
+            <p className={`${isCompact ? "text-[9px]" : "text-xs"} text-rose-400/60 mt-0.5 ml-4 font-normal italic leading-tight`}>
+              ! {r.errorMessage}
+            </p>
+          )}
+        </td>
+        <td className={`${tdCls} text-muted-foreground/40 ${textCls}`}>{r.modelUsed || "—"}</td>
+        <td className={tdCls}><StatusBadge status={r.status} currentTask={r.currentTask} taskStartTime={r.taskStartTime} /></td>
+        <td className={`${tdCls} text-center text-muted-foreground/60 tabular-nums ${textCls}`}>
+          {r.status !== "pending" && r.status !== "skipped"
+            ? `${r.pagesProcessed}/${r.pagesProcessed + r.pagesFailed}`
+            : "—"}
+        </td>
+        <td className={`${tdCls} text-right font-bold tabular-nums ${textCls} ${isBest ? "text-emerald-400" : "text-foreground/80"}`}>{fmt(r.totalDurationMs)}</td>
+        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/60 ${textCls}`}>{fmt(r.avgTtftMs)}</td>
+        <td className={`${tdCls} text-right tabular-nums font-bold text-amber-400/80 ${textCls}`}>{r.tps?.toFixed(1) ?? "—"}</td>
+        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/40 ${textCls}`}>{fmt(r.avgUploadMs)}</td>
+        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/60 ${textCls}`}>
+          {r.promptTokens !== undefined
+            ? `${fmtNum(r.promptTokens + (r.completionTokens || 0))}`
+            : "—"}
+        </td>
+        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/40 ${textCls}`}>{fmtNum(r.avgTokensPerPage)}</td>
+        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/40 ${textCls}`}>{fmtKb(r.avgPayloadKb)}</td>
+        <td className={`${tdCls} text-right tabular-nums font-bold ${textCls} ${r.avgPayloadEfficiency !== undefined ? (r.avgPayloadEfficiency > 0 ? "text-emerald-400" : "text-rose-400") : "text-muted-foreground/40"}`}>
+          {r.avgPayloadEfficiency !== undefined ? `${r.avgPayloadEfficiency > 0 ? "+" : ""}${r.avgPayloadEfficiency.toFixed(1)}%` : "—"}
+        </td>
+        <td className={`${tdCls} text-right tabular-nums font-bold ${textCls} ${isCheapest ? "text-amber-400" : "text-muted-foreground/60"}`}>{fmtCost(r.estimatedCostUsd)}</td>
+      </tr>
+      {expanded && hasPages && r.pageResults.map(pr => (
+        <tr key={pr.pageNum} className={`bg-white/1 text-muted-foreground/30 border-b border-white/1 ${isCompact ? "text-[9px]" : "text-xs"}`}>
+          <td className={`${isCompact ? "pl-8" : "pl-12"} py-1.5 font-mono italic`}>└─ {isCompact ? "p" : "page_"}{pr.pageNum}</td>
+          <td className={`${tdCls} py-1.5`}>—</td>
+          <td className={`${tdCls} py-1.5`}>
+            {pr.errorMessage ? (isCompact ? "FAIL" : "FAILED") : (isCompact ? "OK" : "SUCCESS")}
+          </td>
+          <td className={`${tdCls} py-1.5 text-center`}>—</td>
+          <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.durationMs)}</td>
+          <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.ttftMs)}</td>
+          <td className={`${tdCls} py-1.5 text-right`}>—</td>
+          <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.uploadDurationMs)}</td>
+          <td className={`${tdCls} py-1.5 text-right tabular-nums`}>
+            {pr.promptTokens !== undefined ? fmtNum(pr.promptTokens + (pr.completionTokens || 0)) : "—"}
+          </td>
+          <td className={`${tdCls} py-1.5 text-right`}>—</td>
+          <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmtKb(pr.requestPayloadKb)}</td>
+          <td className={`${tdCls} py-1.5 text-right tabular-nums ${pr.payloadEfficiency !== undefined ? (pr.payloadEfficiency > 0 ? "text-emerald-400/60" : "text-rose-400/60") : ""}`}>
+            {pr.payloadEfficiency !== undefined ? `${pr.payloadEfficiency > 0 ? "+" : ""}${pr.payloadEfficiency.toFixed(1)}%` : "—"}
+          </td>
+          <td className={`${tdCls} py-1.5 text-right`}>—</td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+// ── Results Display (with Zoom capability) ──────────────────────────────────
+function ResultsDisplay({ results, isRunning, bestId, cheapestId }: { 
+  results: BenchmarkResult[]; 
+  isRunning: boolean; 
+  bestId: string | null; 
+  cheapestId: string | null;
+}) {
+  const [isZoomed, setIsZoomed] = useState(false);
+
+  const TableHeader = ({ isCompact }: { isCompact: boolean }) => (
+    <thead className={`${isCompact ? "text-[10px]" : "text-xs"} border-b border-white/5 bg-white/5 text-muted-foreground/40 font-bold uppercase tracking-tight`}>
+      <tr>
+        <th className={`text-left px-2 py-2 ${isCompact ? "w-[14%]" : ""}`}>Scenario</th>
+        <th className={`text-left px-2 py-2 ${isCompact ? "w-[10%]" : ""}`}>Model</th>
+        <th className={`text-left px-2 py-2 ${isCompact ? "w-[12%]" : ""}`}>Status</th>
+        <th className={`text-center px-2 py-2 ${isCompact ? "w-[5%]" : ""}`}>Pages</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[7%]" : ""}`}>Time</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[6%]" : ""}`}>TTFT</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[5%]" : ""} text-amber-400/80`}>TPS</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[7%]" : ""}`}>Upload</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[7%]" : ""}`}>Tokens</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[6%]" : ""}`}>Avg/P</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[7%]" : ""}`}>Payload</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[6%]" : ""}`}>{isCompact ? "Eff." : "Efficiency"}</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[8%]" : ""} text-emerald-400/80`}>Cost</th>
+      </tr>
+    </thead>
+  );
+
+  const TableContent = ({ isCompact }: { isCompact: boolean }) => (
+    <div className={`overflow-x-auto ${isCompact ? "scrollbar-none" : "scrollbar-thin scrollbar-thumb-white/10"}`}>
+      <table className={`w-full border-collapse ${isCompact ? "table-fixed text-[10px]" : "text-sm"} font-mono`}>
+        <TableHeader isCompact={isCompact} />
+        <tbody className="divide-y divide-white/3">
+          {results.map(r => (
+            <ResultRow 
+              key={r.scenarioId} 
+              r={r} 
+              isBest={r.scenarioId === bestId} 
+              isCheapest={r.scenarioId === cheapestId && cheapestId !== bestId}
+              isCompact={isCompact}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const Footer = () => (
+    <div className="px-5 py-3 border-t border-white/5 bg-black/20 flex flex-wrap items-center gap-6 text-[9px] text-muted-foreground/30 uppercase tracking-widest">
+      <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Fastest</span>
+      <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Cheapest</span>
+      <span className="ml-auto font-mono opacity-50"># system_ready_for_export</span>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Compact View */}
+      <div className="bg-[#0c0c0c] border border-white/10 rounded-none overflow-hidden shadow-2xl group relative">
+        <div className="px-5 py-3 border-b border-white/5 bg-black/40 flex items-center gap-2">
+          <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Execution Results</h3>
+          {isRunning && (
+            <span className="ml-auto inline-flex items-center gap-1.5 text-[9px] text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 animate-pulse">
+              $ monitoring_active...
+            </span>
+          )}
+          {!isRunning && (
+            <button 
+              onClick={() => setIsZoomed(true)}
+              className="ml-auto p-1.5 text-muted-foreground/40 hover:text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-2 text-[9px] uppercase tracking-wider font-bold"
+            >
+              <Maximize2 size={12} /> Expand View
+            </button>
+          )}
+        </div>
+        
+        <div className="cursor-zoom-in" onClick={() => !isRunning && setIsZoomed(true)}>
+          <TableContent isCompact={true} />
+        </div>
+        <Footer />
+      </div>
+
+      {/* Zoom Modal */}
+      {isZoomed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 sm:p-10 bg-black/95 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.08),transparent_70%)] pointer-events-none" />
+          
+          <div className="w-full max-w-7xl max-h-[90vh] bg-[#080808] border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col relative overflow-hidden animate-in zoom-in-95 duration-300">
+            {/* Modal Header */}
+            <div className="px-8 py-5 border-b border-white/10 bg-black/60 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-[0.3em] text-primary mb-1">Benchmark Analysis</h3>
+                <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-mono">Multimodal Input Efficiency Report</p>
+              </div>
+              <button 
+                onClick={() => setIsZoomed(false)}
+                className="p-2 text-muted-foreground/40 hover:text-white hover:bg-white/5 rounded-full transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Scrollable Modal Content */}
+            <div className="flex-1 overflow-auto p-8 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
+              <div className="bg-black/40 border border-white/5 shadow-2xl">
+                <TableContent isCompact={false} />
+                <div className="px-8 py-4 border-t border-white/5 bg-black/40 flex items-center gap-8 text-[10px] text-muted-foreground/40 uppercase tracking-[0.2em]">
+                  <span className="flex items-center gap-2 font-bold"><div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" /> Optimal Latency</span>
+                  <span className="flex items-center gap-2 font-bold"><div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" /> Economic Best</span>
+                  <div className="ml-auto flex items-center gap-4 opacity-50 font-mono">
+                    <span>GEN_ID: {Math.random().toString(36).substring(7).toUpperCase()}</span>
+                    <span>TIMESTAMP: {new Date().toLocaleTimeString()}</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Export Hint */}
+              <div className="mt-6 flex justify-center">
+                <p className="text-[10px] text-muted-foreground/30 font-mono italic">
+                  Press Alt+PrtScn or use a screen capture tool to share this high-resolution report.
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Overlay Click to Close */}
+          <div className="absolute inset-0 -z-10" onClick={() => setIsZoomed(false)} />
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── All defined scenarios ─────────────────────────────────────────────────────
+const ALL_SCENARIOS: BenchmarkScenario[] = [
+  { id: "google-base64", label: "Google — Base64", provider: "google", imageInputMode: "base64" },
+  { id: "google-files", label: "Google — Files API", provider: "google", imageInputMode: "google_files" },
+  { id: "openrouter-base64", label: "OpenRouter — Base64", provider: "openrouter", imageInputMode: "base64" },
+  { id: "openrouter-supabase", label: "OpenRouter — Supabase", provider: "openrouter", imageInputMode: "supabase" },
+  { id: "ollama-base64", label: "Ollama — Base64", provider: "ollama", imageInputMode: "base64" },
+];
+
+// ── Main Component ─────────────────────────────────────────────────────────────
+export function Benchmark() {
+  const { results, isRunning, runBenchmark, stopBenchmark, resetResults } = useBenchmark();
+
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pageCount, setPageCount] = useState(0);
+  const [pageFrom, setPageFrom] = useState(1);
+  const [pageTo, setPageTo] = useState(3);
+  const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set(ALL_SCENARIOS.map(s => s.id)));
+  const [isParallel, setIsParallel] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [loadingPdf, setLoadingPdf] = useState(false);
+
+  // Re-evaluate settings every render (reactive)
+  const scenarioChecks = ALL_SCENARIOS.map(s => ({ ...s, check: verifyScenario(s) }));
+  const cfg = (() => { try { return JSON.parse(localStorage.getItem("pustakaku-settings") || "{}"); } catch { return {}; } })();
+  const activeModel = cfg.selectedModel || "—";
+
+  const handleFile = useCallback(async (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".pdf")) return;
+    setLoadingPdf(true);
+    setPdfFile(file);
+    try {
+      const count = await getPdfPageCount(file);
+      setPageCount(count);
+      setPageFrom(1);
+      setPageTo(Math.min(3, count));
+    } catch { setPageCount(0); }
+    finally { setLoadingPdf(false); }
+  }, []);
+
+  const pageNums = Array.from(
+    { length: Math.max(0, pageTo - pageFrom + 1) },
+    (_, i) => pageFrom + i
+  ).filter(n => n >= 1 && n <= pageCount);
+
+  const handleStart = async () => {
+    if (!pdfFile || pageNums.length === 0) return;
+    const scenarios = scenarioChecks
+      .filter(s => enabledIds.has(s.id))
+      .map(({ check: _check, ...s }) => s);
+    await runBenchmark(pdfFile, pageNums, scenarios, { isParallel });
+  };
+
+  const toggleId = (id: string, val: boolean) => {
+    setEnabledIds(prev => { const n = new Set(prev); val ? n.add(id) : n.delete(id); return n; });
+  };
+
+  const bestId = findBestId(results);
+  const cheapestId = findCheapestId(results);
+  const anyDone = results.some(r => r.status === "done");
+
+  const labelCls = "block text-[10px] font-bold text-muted-foreground mb-2 uppercase tracking-[0.1em]";
+  const inputCls = "w-full px-3 py-2 bg-secondary text-foreground border border-border rounded-lg text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all";
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-6 pb-10">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-1">
+        <div className="p-2 bg-primary/10 rounded-lg text-primary"><FlaskConical size={20} /></div>
+        <div>
+          <h2 className="text-lg font-bold tracking-tight">Input Method Benchmark</h2>
+          <p className="text-xs text-muted-foreground">Compare speed, tokens, payload and cost across image input methods using batch PDF extraction.</p>
+        </div>
+      </div>
+
+      {/* Config card */}
+      <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
+        <div className="px-5 py-4 border-b border-border bg-secondary/30 flex items-center gap-2">
+          <Zap size={15} className="text-primary" />
+          <h3 className="text-sm font-bold uppercase tracking-wider">Configuration</h3>
+          {activeModel !== "—" && (
+            <span className="ml-auto text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded">
+              Model: {activeModel}
+            </span>
+          )}
+        </div>
+
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* PDF Picker */}
+          <div>
+            <label className={labelCls}>PDF Document</label>
+            <div
+              className={`border-2 border-dashed rounded-xl transition-all duration-200 cursor-pointer ${dragOver ? "border-primary bg-primary/5 scale-[1.01]"
+                  : pdfFile ? "border-border bg-secondary/20"
+                    : "border-border hover:border-primary/40 hover:bg-secondary/20"
+                }`}
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+              onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".pdf"; i.onchange = e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleFile(f); }; i.click(); }}
+            >
+              {loadingPdf ? (
+                <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
+                  <Loader2 size={20} className="animate-spin" /> <span className="text-sm">Loading PDF…</span>
+                </div>
+              ) : pdfFile ? (
+                <div className="flex items-center gap-3 p-3">
+                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center text-primary shrink-0">
+                    <FileText size={22} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{pdfFile.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{(pdfFile.size / 1024).toFixed(1)} KB · {pageCount} pages</p>
+                    <p className="text-[10px] text-primary mt-1">Click to change file</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground">
+                  <FileText size={28} className="opacity-40" />
+                  <p className="text-xs font-medium">Drop PDF here or click to browse</p>
+                </div>
+              )}
+            </div>
+
+            {/* Page range */}
+            {pdfFile && pageCount > 0 && (
+              <div className="mt-3 space-y-2">
+                <label className={labelCls}>Page Range to Benchmark</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <label className="text-[10px] text-muted-foreground mb-1 block">From</label>
+                    <input type="number" min={1} max={pageCount} value={pageFrom}
+                      onChange={e => setPageFrom(Math.max(1, Math.min(pageCount, +e.target.value)))}
+                      className={inputCls} />
+                  </div>
+                  <span className="text-muted-foreground mt-5">–</span>
+                  <div className="flex-1">
+                    <label className="text-[10px] text-muted-foreground mb-1 block">To</label>
+                    <input type="number" min={1} max={pageCount} value={pageTo}
+                      onChange={e => setPageTo(Math.max(pageFrom, Math.min(pageCount, +e.target.value)))}
+                      className={inputCls} />
+                  </div>
+                  <div className="mt-5 px-3 py-2 bg-secondary border border-border rounded-lg text-xs text-muted-foreground font-mono whitespace-nowrap">
+                    {pageNums.length} page{pageNums.length !== 1 ? "s" : ""}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Scenarios + Settings Validation */}
+          <div>
+            <label className={labelCls}>Scenarios & Settings Validation</label>
+            <div className="space-y-2">
+              {scenarioChecks.map(s => {
+                const isEnabled = enabledIds.has(s.id);
+                const { valid, reason } = s.check;
+                const modeIcon = s.imageInputMode === "base64"
+                  ? <HardDrive size={12} className="shrink-0 text-muted-foreground" />
+                  : <Cloud size={12} className="shrink-0 text-primary" />;
+
+                return (
+                  <label key={s.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all cursor-pointer ${!valid ? "opacity-50 cursor-not-allowed border-border bg-secondary/10"
+                      : isEnabled ? "border-primary/40 bg-primary/5"
+                        : "border-border hover:border-primary/30 hover:bg-secondary/30"
+                    }`}>
+                    <input type="checkbox" checked={isEnabled} disabled={!valid}
+                      onChange={e => toggleId(s.id, e.target.checked)}
+                      className="accent-primary w-4 h-4 shrink-0" />
+                    {modeIcon}
+                    <span className="text-sm font-medium flex-1">{s.label}</span>
+                    {valid
+                      ? <span title="Settings OK"><ShieldCheck size={13} className="text-emerald-400 shrink-0" /></span>
+                      : <span title={reason}><ShieldX size={13} className="text-destructive shrink-0" /></span>
+                    }
+                    {!valid && (
+                      <span className="text-[9px] text-destructive/80 max-w-[100px] text-right leading-tight hidden group-hover:block">
+                        {reason}
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* Settings issues summary */}
+            {scenarioChecks.some(s => !s.check.valid) && (
+              <div className="mt-3 p-3 bg-yellow-400/5 border border-yellow-400/20 rounded-lg">
+                <p className="text-[10px] text-yellow-400 font-semibold flex items-center gap-1 mb-1">
+                  <AlertTriangle size={11} /> Some scenarios are disabled due to missing settings:
+                </p>
+                {scenarioChecks.filter(s => !s.check.valid).map(s => (
+                  <p key={s.id} className="text-[10px] text-muted-foreground ml-3">· <span className="font-medium">{s.label}</span>: {s.check.reason}</p>
+                ))}
+              </div>
+            )}
+
+            {/* Execution mode */}
+            <div className="mt-6">
+              <label className={labelCls}>Execution Mode</label>
+              <div className="flex gap-4">
+                <label className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border transition-all cursor-pointer ${!isParallel ? "border-primary/40 bg-primary/5" : "border-border hover:bg-secondary/20"}`}>
+                  <input type="radio" checked={!isParallel} onChange={() => setIsParallel(false)} className="accent-primary" />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold">Sequential</span>
+                    <span className="text-[10px] text-muted-foreground">Page by page (Safe)</span>
+                  </div>
+                </label>
+                <label className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border transition-all cursor-pointer ${isParallel ? "border-primary/40 bg-primary/5" : "border-border hover:bg-secondary/20"}`}>
+                  <input type="radio" checked={isParallel} onChange={() => setIsParallel(true)} className="accent-primary" />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold">Parallel</span>
+                    <span className="text-[10px] text-muted-foreground">Concurrent (Fast)</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="px-6 pb-6 flex items-center gap-3 flex-wrap">
+          {!isRunning ? (
+            <button onClick={handleStart}
+              disabled={!pdfFile || pageNums.length === 0 || enabledIds.size === 0}
+              className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold uppercase tracking-wider transition-all hover:bg-primary/90 hover:-translate-y-0.5 disabled:opacity-40 disabled:translate-y-0 shadow-lg shadow-primary/20">
+              <FlaskConical size={15} /> Start Benchmark
+            </button>
+          ) : (
+            <button onClick={stopBenchmark}
+              className="flex items-center gap-2 px-6 py-2.5 bg-destructive/10 text-destructive border border-destructive/30 rounded-xl text-sm font-bold uppercase tracking-wider hover:bg-destructive/20">
+              <Square size={15} /> Stop
+            </button>
+          )}
+          {results.length > 0 && !isRunning && (
+            <>
+              <button onClick={resetResults}
+                className="flex items-center gap-2 px-4 py-2.5 bg-secondary text-foreground border border-border rounded-xl text-sm font-semibold hover:bg-secondary/80">
+                <RotateCcw size={14} /> Reset
+              </button>
+              {anyDone && (
+                <button onClick={() => exportCsv(results, activeModel, pageNums.length)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-secondary text-foreground border border-border rounded-xl text-sm font-semibold hover:bg-secondary/80 ml-auto">
+                  <Download size={14} /> Export CSV
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Dedicated Console */}
+      <BenchmarkConsole />
+
+      {/* Results table */}
+      {/* Results table */}
+      {results.length > 0 && (
+        <ResultsDisplay
+          results={results}
+          isRunning={isRunning}
+          bestId={bestId}
+          cheapestId={cheapestId}
+        />
+      )}
+
+      {/* Empty state */}
+      {results.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
+          <FlaskConical size={40} className="opacity-20 mb-4" />
+          <p className="text-sm font-medium">No benchmark results yet</p>
+          <p className="text-xs mt-1">Load a PDF, select page range and scenarios, then click "Start Benchmark".</p>
+        </div>
+      )}
+    </div>
+  );
+}
