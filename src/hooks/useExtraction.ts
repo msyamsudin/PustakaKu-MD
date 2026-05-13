@@ -230,35 +230,34 @@ export function useExtraction(deps: ExtractionDeps) {
       if (!savedSettings) throw new Error("Please configure API settings first.");
       const config = JSON.parse(savedSettings);
 
-      let currentRenderPromise: Promise<Blob> | null =
-        deps.pdfDoc && !deps.pageCache[pageList[0]]
-          ? renderPageFromDoc(deps.pdfDoc, pageList[0]).promise
-          : null;
+      const concurrency = config.batchMode === "parallel" ? (config.batchConcurrency || 3) : 1;
+      const isParallel = config.batchMode === "parallel";
 
-      for (let i = 0; i < pageList.length; i++) {
-        if (stopBatchRef.current || abortControllerRef.current?.signal.aborted) break;
-
-        const pageNum = pageList[i];
-        const nextPageNum = pageList[i + 1];
-
-        setBatchProgress((prev) => ({
-          ...prev,
-          status: `Page ${i + 1} of ${pageList.length} — rendering pg. ${pageNum}...`,
-          currentPage: pageNum,
-          currentImage: deps.pageCache[pageNum] || deps.thumbCache[pageNum],
-        }));
-
-        // Switch the UI to the page being extracted
-        deps.setCurrentPdfPage(pageNum);
-        deps.setMarkdown(""); // Clear view for new streaming content
+      // Helper to process a single page
+      const processPageTask = async (pageNum: number, index: number) => {
+        if (stopBatchRef.current || abortControllerRef.current?.signal.aborted) return;
 
         try {
+          setBatchProgress((prev) => ({
+            ...prev,
+            status: isParallel 
+              ? `Processing ${prev.activePages?.length || 1} pages...`
+              : `Page ${index + 1} of ${pageList.length} — rendering pg. ${pageNum}...`,
+            currentPage: isParallel ? prev.currentPage : pageNum,
+            currentImage: isParallel ? prev.currentImage : (deps.pageCache[pageNum] || deps.thumbCache[pageNum]),
+          }));
+
+          if (!isParallel) {
+            deps.setCurrentPdfPage(pageNum);
+            deps.setMarkdown("");
+          }
+
           let blobUrl = deps.pageCache[pageNum];
           let currentBlob: Blob;
 
           if (!blobUrl) {
-            const blob = await (currentRenderPromise ??
-              renderPageFromDoc(deps.pdfDoc, pageNum).promise);
+            const { promise } = renderPageFromDoc(deps.pdfDoc, pageNum);
+            const { blob } = await promise;
             currentBlob = blob;
             blobUrl = URL.createObjectURL(blob);
             deps.setPageCache((prev) => {
@@ -271,21 +270,15 @@ export function useExtraction(deps: ExtractionDeps) {
             currentBlob = await fetch(blobUrl).then((r) => r.blob());
           }
 
-          setBatchProgress((prev) => ({
-            ...prev,
-            currentImage: blobUrl,
-            status: `Page ${i + 1} of ${pageList.length} — extracting pg. ${pageNum}...`,
-          }));
-
-          // Start rendering the next page NOW (look-ahead)
-          if (nextPageNum !== undefined && !deps.pageCache[nextPageNum]) {
-            currentRenderPromise = renderPageFromDoc(deps.pdfDoc, nextPageNum).promise;
-          } else {
-            currentRenderPromise = null;
+          if (!isParallel) {
+            setBatchProgress((prev) => ({
+              ...prev,
+              currentImage: blobUrl,
+              status: `Page ${index + 1} of ${pageList.length} — extracting pg. ${pageNum}...`,
+            }));
           }
 
           const startTime = performance.now();
-
           const useSupabase =
             config.provider === "openrouter" &&
             config.imageInputMode === "supabase" &&
@@ -303,7 +296,7 @@ export function useExtraction(deps: ExtractionDeps) {
           let uploadedPath: string | null = null;
 
           try {
-            setIsPageExtracting(true);
+            if (!isParallel) setIsPageExtracting(true);
             updateStreamingActivity(true);
 
             let extractionImageUrl: string | undefined;
@@ -311,8 +304,7 @@ export function useExtraction(deps: ExtractionDeps) {
             if (useSupabase && supabaseConfig) {
               const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
               const filePath = `page-${pageNum}-${sessionId}.jpg`;
-              // Use adaptive TTL based on remaining pages to process
-              const remainingPages = pageList.length - i;
+              const remainingPages = pageList.length - index;
               const ttl = calculateAdaptiveTTL(remainingPages);
 
               uploadedPath = await uploadToSupabase(currentBlob, supabaseConfig, filePath);
@@ -320,61 +312,93 @@ export function useExtraction(deps: ExtractionDeps) {
               logger.info(`[Supabase] Image ready for extraction (Page ${pageNum})`, { url: extractionImageUrl.split('?')[0] });
             }
 
-            const base64 = useSupabase ? "" : await blobToBase64(currentBlob);
+          const base64 = useSupabase ? "" : await blobToBase64(currentBlob);
 
-            const result = await extractMarkdown({
-              provider: config.provider as Provider,
-              openRouterKey: config.openRouterKey,
-              ollamaUrl: config.ollamaUrl,
-              googleApiKey: config.googleApiKey,
-              model: config.selectedModel,
-              base64Image: base64,
-              imageInputMode: useSupabase ? "supabase" : (config.imageInputMode === "google_files" ? "google_files" : "base64"),
-              imageUrl: extractionImageUrl,
-              onChunk: (chunk) => {
+          const result = await extractMarkdown({
+            provider: config.provider as Provider,
+            openRouterKey: config.openRouterKey,
+            ollamaUrl: config.ollamaUrl,
+            googleApiKey: config.googleApiKey,
+            model: config.selectedModel,
+            base64Image: base64,
+            imageInputMode: useSupabase ? "supabase" : (config.imageInputMode === "google_files" ? "google_files" : "base64"),
+            imageUrl: extractionImageUrl,
+            onChunk: (chunk) => {
+              if (!isParallel) {
                 deps.setMarkdown((prev) => (typeof prev === "string" ? prev + chunk : chunk));
                 updateStreamingActivity(true);
-              },
-              signal: abortControllerRef.current?.signal,
-            });
+              }
+            },
+            signal: abortControllerRef.current?.signal,
+          });
 
-            const duration = (performance.now() - startTime) / 1000;
-            const processedMarkdown = await postProcessImageCrops(result.markdown, pageNum);
+          const duration = (performance.now() - startTime) / 1000;
+          const processedMarkdown = await postProcessImageCrops(result.markdown, pageNum);
 
-            deps.setMarkdownCache((prev) => {
-              const next = { ...prev, [pageNum]: processedMarkdown };
-              if (deps.file)
-                cacheDB.set(
-                  STORES.EXTRACTIONS,
-                  { path: deps.file.path, pageNum },
-                  processedMarkdown
-                );
-              return next;
-            });
-            updateStats(result, deps.file?.name || "unknown", duration);
+          deps.setMarkdownCache((prev) => {
+            const next = { ...prev, [pageNum]: processedMarkdown };
+            if (deps.file)
+              cacheDB.set(
+                STORES.EXTRACTIONS,
+                { path: deps.file.path, pageNum },
+                processedMarkdown
+              );
+            return next;
+          });
+          updateStats(result, deps.file?.name || "unknown", duration);
 
+          if (!isParallel) {
             deps.setMarkdown(processedMarkdown);
             setUsage(result.usage);
             setExtractDuration(duration);
-          } finally {
-            setIsPageExtracting(false);
-            updateStreamingActivity(false);
-            // Always clean up the uploaded file
-            if (uploadedPath && supabaseConfig) {
-              await deleteFromSupabase(uploadedPath, supabaseConfig);
-            }
           }
-
-          setBatchProgress((prev) => ({ ...prev, current: i + 1 }));
-        } catch (e: any) {
-          if (e.name === "AbortError") {
-            logger.warn(`Batch extraction stopped at page ${pageNum}`);
-            break;
+        } finally {
+          if (!isParallel) setIsPageExtracting(false);
+          updateStreamingActivity(false);
+          if (uploadedPath && supabaseConfig) {
+            await deleteFromSupabase(uploadedPath, supabaseConfig);
           }
-          logger.error(`Batch failed on page ${pageNum}`, { error: e.message || e });
-          setBatchProgress((prev) => ({ ...prev, current: i + 1 }));
+        }
+      } catch (e: any) {
+        if (e.name === "AbortError") {
+          logger.warn(`Extraction of page ${pageNum} stopped.`);
+        } else {
+          logger.error(`Failed on page ${pageNum}`, { error: e.message || e });
         }
       }
+    };
+
+    const activePages = new Set<number>();
+    const tasks = [...pageList];
+    let completedCount = 0;
+
+    const worker = async () => {
+      while (tasks.length > 0 && !stopBatchRef.current) {
+        const pageNum = tasks.shift()!;
+        const index = pageList.indexOf(pageNum);
+        activePages.add(pageNum);
+        
+        setBatchProgress(prev => ({ 
+          ...prev, 
+          activePages: Array.from(activePages),
+          status: isParallel ? `Processing ${activePages.size} pages...` : prev.status 
+        }));
+
+        await processPageTask(pageNum, index);
+        
+        activePages.delete(pageNum);
+        completedCount++;
+        setBatchProgress(prev => ({ 
+          ...prev, 
+          current: completedCount,
+          activePages: Array.from(activePages) 
+        }));
+      }
+    };
+
+    // Run workers based on concurrency
+    const workers = Array.from({ length: Math.min(concurrency, pageList.length) }, () => worker());
+    await Promise.all(workers);
     } catch (e: any) {
       if (e.name === "AbortError") {
         console.log("[Extractor] Batch process aborted.");

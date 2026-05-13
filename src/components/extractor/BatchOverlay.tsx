@@ -80,6 +80,26 @@ export function BatchOverlay({ progress, isExtracting, isStreaming, onCancel }: 
           </div>
         </div>
 
+        {/* Active Workers for Parallel Mode */}
+        {progress.activePages && progress.activePages.length > 1 && (
+          <div className="space-y-2 animate-in fade-in duration-300">
+            <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1">
+              <Sparkles size={10} className="text-primary" />
+              <span>Active Workers ({progress.activePages.length})</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {progress.activePages.map((pageNum) => (
+                <div 
+                  key={pageNum}
+                  className="px-2 py-1 bg-primary/10 border border-primary/20 rounded text-[10px] font-bold text-primary animate-pulse"
+                >
+                  Page {pageNum}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Live Activity Feed */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1">

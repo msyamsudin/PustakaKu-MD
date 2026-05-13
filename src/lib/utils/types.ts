@@ -18,6 +18,8 @@ export interface AppConfig {
   supabaseProjectId?: string;        // project reference ID (e.g. "abcdefghijklmnop")
   supabaseServiceKey?: string;      // service_role / secret key
   supabaseBucket?: string;          // default: "page-images"
+  batchMode?: "sequential" | "parallel";
+  batchConcurrency?: number;        // default: 3
 }
 
 export interface BatchProgress {
@@ -26,6 +28,7 @@ export interface BatchProgress {
   status: string;
   currentImage?: string;
   currentPage?: number;
+  activePages?: number[]; // For parallel mode
 }
 
 export type PageCache = Record<number, string>;       // pageNum → Blob URL

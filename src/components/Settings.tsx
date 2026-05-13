@@ -35,6 +35,8 @@ export function Settings() {
     supabaseProjectId: "",
     supabaseServiceKey: "",
     supabaseBucket: "page-images",
+    batchMode: "sequential" as "sequential" | "parallel",
+    batchConcurrency: 3,
   });
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
@@ -535,6 +537,63 @@ export function Settings() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Batch Processing Section */}
+        <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
+          <div className="px-5 py-4 border-b border-border bg-secondary/30 flex items-center gap-2">
+            <RefreshCw size={16} className="text-primary" />
+            <h3 className="text-sm font-bold uppercase tracking-wider">Batch Processing</h3>
+          </div>
+
+          <div className="p-6 space-y-6">
+            <div>
+              <label className={labelCls}>Processing Mode</label>
+              <div className="grid grid-cols-2 gap-2 p-1 bg-secondary/50 rounded-xl border border-border">
+                <button
+                  onClick={() => updateSetting("batchMode", "sequential")}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${settings.batchMode === "sequential" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  <RefreshCw size={14} className="rotate-90" />
+                  Sequential
+                </button>
+                <button
+                  onClick={() => updateSetting("batchMode", "parallel")}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${settings.batchMode === "parallel" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  <Zap size={14} />
+                  Stable Parallel
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-2 px-1">
+                {settings.batchMode === "parallel" 
+                  ? "Processes multiple pages at once. Faster, but might hit API rate limits if concurrency is too high." 
+                  : "Processes pages one by one. Slowest but most reliable."}
+              </p>
+            </div>
+
+            {settings.batchMode === "parallel" && (
+              <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex justify-between items-center">
+                  <label className={labelCls}>Parallel Concurrency</label>
+                  <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">{settings.batchConcurrency} pages</span>
+                </div>
+                <input
+                  type="range"
+                  min="2"
+                  max="10"
+                  step="1"
+                  value={settings.batchConcurrency || 3}
+                  onChange={(e) => updateSetting("batchConcurrency", parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground font-medium px-1">
+                  <span>2 (Safe)</span>
+                  <span>10 (Aggressive)</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
