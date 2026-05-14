@@ -13,6 +13,14 @@ import {
 
 import { motion, AnimatePresence } from "framer-motion";
 
+function calculateStdDev(values: number[]): number {
+  if (values.length < 2) return 0;
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  const squareDiffs = values.map((v) => Math.pow(v - avg, 2));
+  const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / values.length;
+  return Math.sqrt(avgSquareDiff);
+}
+
 export function LogViewer() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -65,6 +73,9 @@ export function LogViewer() {
         acc.totalDuration += Number(log.details.duration || 0);
         acc.totalCost += Number(log.details.cost || log.details.total_cost || 0);
         acc.successCount += 1;
+        if (typeof log.details.ttft === "number") {
+          acc.ttftValues.push(log.details.ttft);
+        }
       } else if (log.level === "error") {
         acc.errorCount += 1;
       }
@@ -76,8 +87,15 @@ export function LogViewer() {
       totalCost: 0,
       successCount: 0,
       errorCount: 0,
+      ttftValues: [] as number[],
     }
   );
+
+  const avgTtft = summary.ttftValues.length > 0 
+    ? summary.ttftValues.reduce((a, b) => a + b, 0) / summary.ttftValues.length 
+    : 0;
+  
+  const stdDevTtft = calculateStdDev(summary.ttftValues);
 
   const avgTokensPerSec =
     summary.totalDuration > 0
@@ -379,6 +397,18 @@ export function LogViewer() {
                     <span className="text-amber-400 font-black text-base">{avgTokensPerSec}<span className="text-[10px] ml-1 opacity-50 uppercase">t/s</span></span>
                   </div>
 
+                  {summary.ttftValues.length > 0 && (
+                    <div className="flex flex-col gap-0.5 border-l border-white/5 pl-10">
+                      <span className="text-muted-foreground/40 text-[9px] uppercase tracking-widest">Latency (TTFT)</span>
+                      <span className="text-violet-400 font-black text-base">
+                        {Math.round(avgTtft)}
+                        <span className="text-[10px] ml-0.5 opacity-50 uppercase font-normal">ms</span>
+                        <span className="mx-1 text-white/20">±</span>
+                        {Math.round(stdDevTtft)}
+                      </span>
+                    </div>
+                  )}
+
                   {summary.totalCost > 0 && (
                     <div className="flex flex-col gap-0.5 border-l border-white/5 pl-10">
                       <span className="text-muted-foreground/40 text-[9px] uppercase tracking-widest">Expense</span>
@@ -459,6 +489,7 @@ function LogItem({
   const cost = details.cost ?? details.total_cost;
   const duration = details.duration;
   const status = details.status;
+  const ttft = details.ttft;
 
   const levelStyles: Record<string, { text: string; bg: string; border: string; accent: string }> = {
     info: { text: "text-sky-400", bg: "bg-sky-400/10", border: "border-sky-400/20", accent: "bg-sky-400" },
@@ -545,10 +576,11 @@ function LogItem({
 
       <div className="truncate text-muted-foreground/50">
         {tokens && `${tokens}tk`}
-        {tokens && duration && "::"}
+        {typeof ttft === "number" && `::${Math.round(ttft)}ms`}
+        {(tokens || ttft) && duration && "::"}
         {typeof duration === "number" ? `${duration.toFixed(2)}s` : duration}
-        {!tokens && !duration && imageSize}
-        {!tokens && !duration && !imageSize && status}
+        {!tokens && !duration && !ttft && imageSize}
+        {!tokens && !duration && !ttft && !imageSize && status}
       </div>
     </div>
   );

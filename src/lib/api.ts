@@ -177,7 +177,9 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
       let usage: any = undefined;
       let buffer = "";
 
+      let firstChunkTime: number | undefined;
       await readStream(response, (rawChunk) => {
+        if (firstChunkTime === undefined) firstChunkTime = performance.now();
         buffer += rawChunk;
         const lines = buffer.split('\n');
         buffer = lines.pop() || ""; // Keep the last (potentially incomplete) line in buffer
@@ -194,12 +196,14 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
             if (parsed.done) {
               const totalTokens = (parsed.prompt_eval_count || 0) + (parsed.eval_count || 0);
               const durationSec = parsed.total_duration / 1e9;
+              const ttftMs = firstChunkTime ? firstChunkTime - startTime : undefined;
 
               logger.success(`Extraction complete (Ollama)`, {
                 provider: "Ollama",
                 model,
                 tokens: totalTokens,
-                duration: durationSec
+                duration: durationSec,
+                ttft: ttftMs
               });
 
               usage = parsed.prompt_eval_count ? {
@@ -260,7 +264,9 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
       let usage: any = undefined;
       let buffer = "";
 
+      let firstChunkTime: number | undefined;
       const processLines = (text: string) => {
+        if (firstChunkTime === undefined) firstChunkTime = performance.now();
         buffer += text;
         const lines = buffer.split('\n');
         buffer = lines.pop() || ""; // Keep partial line
@@ -310,12 +316,14 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
       }
 
       const durationSec = (performance.now() - startTime) / 1000;
+      const ttftMs = firstChunkTime ? firstChunkTime - startTime : undefined;
       logger.success(`Extraction complete (OpenRouter)`, {
         provider: "OpenRouter",
         model,
         tokens: usage?.total_tokens,
         cost: usage?.total_cost ?? usage?.cost, // Try both
-        duration: durationSec
+        duration: durationSec,
+        ttft: ttftMs
       });
 
       return {
@@ -421,7 +429,9 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
       let usage: any = undefined;
       let buffer = "";
 
+      let firstChunkTime: number | undefined;
       const processLines = (text: string) => {
+        if (firstChunkTime === undefined) firstChunkTime = performance.now();
         buffer += text;
         const lines = buffer.split('\n');
         buffer = lines.pop() || ""; // Keep partial line
@@ -461,11 +471,13 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
       }
 
       const durationSec = (performance.now() - startTime) / 1000;
+      const ttftMs = firstChunkTime ? firstChunkTime - startTime : undefined;
       logger.success(`Extraction complete (Google AI Studio)`, {
         provider: "Google",
         model,
         tokens: usage?.total_tokens,
-        duration: durationSec
+        duration: durationSec,
+        ttft: ttftMs
       });
 
       return {
