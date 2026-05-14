@@ -49,7 +49,7 @@ export function Settings() {
   const [supabaseTestStatus, setSupabaseTestStatus] = useState<
     { ok: boolean; message: string } | null
   >(null);
-  const [isTestingSupabase, setIsTestingSupabase] = useState(false);
+  const [isTesting_supabase, setIsTestingSupabase] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("pustakaku-settings");
@@ -455,18 +455,18 @@ export function Settings() {
                       <button
                         onClick={handleTestSupabase}
                         disabled={
-                          isTestingSupabase ||
+                          isTesting_supabase ||
                           !settings.supabaseProjectId ||
                           !settings.supabaseServiceKey
                         }
                         className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary/20 transition-all text-xs font-bold uppercase tracking-wider disabled:opacity-40"
                       >
-                        {isTestingSupabase ? (
+                        {isTesting_supabase ? (
                           <Loader2 size={14} className="animate-spin" />
                         ) : (
                           <Zap size={14} />
                         )}
-                        {isTestingSupabase ? "Testing..." : "Test Connection"}
+                        {isTesting_supabase ? "Testing..." : "Test Connection"}
                       </button>
 
                       {supabaseTestStatus && (
@@ -577,20 +577,30 @@ export function Settings() {
               <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
                 <div className="flex justify-between items-center">
                   <label className={labelCls}>Parallel Concurrency</label>
-                  <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">{settings.batchConcurrency} pages</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={settings.batchConcurrency || 3}
+                      onChange={(e) => updateSetting("batchConcurrency", parseInt(e.target.value) || 1)}
+                      className="w-16 px-2 py-1 text-xs font-bold text-primary bg-primary/10 border border-primary/20 rounded focus:outline-none focus:ring-1 focus:ring-primary/50 text-center"
+                    />
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">pages</span>
+                  </div>
                 </div>
                 <input
                   type="range"
-                  min="2"
-                  max="10"
+                  min="1"
+                  max="20"
                   step="1"
-                  value={settings.batchConcurrency || 3}
+                  value={Math.min(settings.batchConcurrency || 3, 20)}
                   onChange={(e) => updateSetting("batchConcurrency", parseInt(e.target.value))}
                   className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
                 />
                 <div className="flex justify-between text-[10px] text-muted-foreground font-medium px-1">
-                  <span>2 (Safe)</span>
-                  <span>10 (Aggressive)</span>
+                  <span>1 (Safe)</span>
+                  <span>20 (Aggressive)</span>
                 </div>
               </div>
             )}
