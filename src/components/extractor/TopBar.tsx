@@ -1,5 +1,4 @@
 import { UploadCloud, X, Zap, FileText, Copy, Check, Download, Coins, Timer, HardDrive, Cloud } from "lucide-react";
-import { calculateCost } from "../../lib/utils/stats";
 import type { AppFile, AppConfig } from "../../lib/utils/types";
 import type { ExtractionResult } from "../../lib/api";
 
@@ -15,6 +14,7 @@ interface Props {
   showMarkdownGrid: boolean;
   selectedPagesCount: number;
   usage: ExtractionResult["usage"] | null;
+  cost: number | null;
   extractDuration: number | null;
   onFileOpen: () => void;
   onCloseDocument: () => void;
@@ -29,7 +29,7 @@ interface Props {
 export function TopBar({
   file, config, previewUrl, markdown, markdownCacheCount,
   isExtracting, isCopied, showPageGrid, showMarkdownGrid,
-  selectedPagesCount: _selectedPagesCount, usage, extractDuration,
+  selectedPagesCount: _selectedPagesCount, usage, cost, extractDuration,
   onFileOpen, onCloseDocument, onExtract, onCopy,
   onSave, onBatchDownload, onDownloadCombined,
   onToggleBatchMode
@@ -194,11 +194,9 @@ export function TopBar({
             )}
           </div>
 
-          {config?.provider === "openrouter" && (
+          {cost !== null && cost > 0 && (
             <div className="font-medium text-accent text-xs px-2 py-0.5 rounded border border-accent/20">
-              {calculateCost(usage, config.selectedModel)
-                ? `Cost: $${calculateCost(usage, config.selectedModel)}`
-                : "Check OpenRouter Dashboard"}
+              Cost: ${cost.toFixed(6)}
             </div>
           )}
 

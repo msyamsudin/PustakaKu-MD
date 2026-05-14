@@ -1,31 +1,8 @@
 import type { ExtractionResult } from "../api";
 
-// Prices per 1M tokens (USD)
-const PRICES: Record<string, { in: number; out: number }> = {
-  "openai/gpt-4o": { in: 5, out: 15 },
-  "openai/gpt-4-turbo": { in: 10, out: 30 },
-  "anthropic/claude-3-opus": { in: 15, out: 75 },
-  "anthropic/claude-3-sonnet": { in: 3, out: 15 },
-  "anthropic/claude-3-haiku": { in: 0.25, out: 1.25 },
-  "google/gemini-pro-1.5": { in: 3.5, out: 10.5 },
-  "google/gemini-flash-1.5": { in: 0.35, out: 1.05 },
-};
-
-export function calculateCost(
-  usage: ExtractionResult["usage"],
-  model: string
-): string | null {
-  if (!usage || !model) return null;
-  const price = PRICES[model];
-  if (!price) return null;
-  const cost =
-    (usage.prompt_tokens * price.in + usage.completion_tokens * price.out) /
-    1_000_000;
-  return cost.toFixed(4);
-}
-
 export function updateStats(
   result: ExtractionResult,
+  filePath: string,
   fileName: string,
   duration: number
 ): void {
@@ -38,14 +15,13 @@ export function updateStats(
   const statsLog: any[] = JSON.parse(
     localStorage.getItem("pustakaku-stats") || "[]"
   );
+  
+  // Group by path for uniqueness, fallback to filename
   const existingIndex = statsLog.findIndex(
-    (entry) => entry.filename === (fileName || "unknown")
+    (entry) => (entry.path && entry.path === filePath) || entry.filename === (fileName || "unknown")
   );
 
-  const newCost =
-    config.provider === "openrouter"
-      ? Number(calculateCost(result.usage, config.selectedModel))
-      : 0;
+  const newCost = result.cost || 0;
 
   const sessionEntry = {
     id: Date.now(),
@@ -58,10 +34,42 @@ export function updateStats(
 
   if (existingIndex !== -1) {
     const existing = statsLog[existingIndex];
+    const allSessions = [sessionEntry, ...(existing.sessions || [])];
+    
+    // Calculate merged duration (union of intervals)
+    const intervals = allSessions.map(s => {
+      const end = new Date(s.timestamp).getTime();
+      const start = end - (s.duration * 1000);
+      return { start, end };
+    });
+    
+    intervals.sort((a, b) => a.start - b.start);
+    
+    let mergedMs = 0;
+    if (intervals.length > 0) {
+      let currentStart = intervals[0].start;
+      let currentEnd = intervals[0].end;
+      
+      for (let i = 1; i < intervals.length; i++) {
+        if (intervals[i].start < currentEnd) {
+          currentEnd = Math.max(currentEnd, intervals[i].end);
+        } else {
+          mergedMs += currentEnd - currentStart;
+          currentStart = intervals[i].start;
+          currentEnd = intervals[i].end;
+        }
+      }
+      mergedMs += currentEnd - currentStart;
+    }
+    
+    const newMergedDuration = mergedMs / 1000;
+
     statsLog[existingIndex] = {
       ...existing,
+      path: filePath, // Ensure path is stored
+      filename: fileName,
       timestamp: new Date().toISOString(),
-      sessions: [sessionEntry, ...(existing.sessions || [])],
+      sessions: allSessions,
       tokens: {
         prompt_tokens:
           (existing.tokens?.prompt_tokens || 0) + result.usage.prompt_tokens,
@@ -72,11 +80,12 @@ export function updateStats(
           (existing.tokens?.total_tokens || 0) + result.usage.total_tokens,
       },
       cost: (Number(existing.cost) || 0) + newCost,
-      duration: (existing.duration || 0) + duration,
+      duration: newMergedDuration,
     };
   } else {
     const newEntry = {
       id: Date.now(),
+      path: filePath,
       filename: fileName || "unknown",
       timestamp: new Date().toISOString(),
       provider: config.provider,

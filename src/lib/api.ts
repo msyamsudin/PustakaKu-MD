@@ -1,17 +1,19 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import { logger } from "./logger";
 
-export type Provider = "ollama" | "openrouter" | "google";
+export type Provider = "ollama" | "openrouter" | "google" | "anthropic";
 
 interface ExtractionOptions {
   provider: Provider;
   openRouterKey?: string;
+  anthropicApiKey?: string;
   ollamaUrl?: string;
   googleApiKey?: string;
   model: string;
   base64Image: string;
   imageInputMode?: "base64" | "supabase" | "google_files"; // default: "base64"
   imageUrl?: string;                       // pre-generated signed URL (Supabase mode)
+  mimeType?: string;                       // Optional hint for mimeType
   onChunk?: (text: string) => void;
   signal?: AbortSignal;
 }
@@ -42,6 +44,7 @@ export interface ExtractionResult {
     completion_tokens: number;
     total_tokens: number;
   };
+  cost?: number;
 }
 
 export interface ModelInfo {
@@ -147,9 +150,9 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
       ? base64Image.split('base64,')[1]
       : base64Image).replace(/\s/g, '');
 
-    const mimeType = base64Image.includes('data:')
+    const mimeType = options.mimeType || (base64Image.includes('data:')
       ? base64Image.split('data:')[1].split(';')[0]
-      : 'image/jpeg';
+      : 'image/jpeg');
 
     const startTime = performance.now();
 
@@ -220,7 +223,8 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
 
       return {
         markdown: accumulatedMarkdown,
-        usage
+        usage,
+        cost: 0
       };
     } else if (provider === "openrouter") {
       const imageContent = useSupabase
@@ -328,7 +332,8 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
 
       return {
         markdown: accumulatedMarkdown,
-        usage
+        usage,
+        cost: usage?.total_cost ?? usage?.cost
       };
     } else if (provider === "google") {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-1.5-flash"}:streamGenerateContent?key=${options.googleApiKey}&alt=sse`;
@@ -482,7 +487,8 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
 
       return {
         markdown: accumulatedMarkdown,
-        usage
+        usage,
+        cost: 0 // Calculated by updateStats for direct Google
       };
     }
 
@@ -490,7 +496,7 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
   });
 }
 
-export async function fetchModels(provider: Provider, config: { openRouterKey?: string; ollamaUrl?: string; googleApiKey?: string }): Promise<ModelInfo[]> {
+export async function fetchModels(provider: Provider, config: { openRouterKey?: string; anthropicApiKey?: string; ollamaUrl?: string; googleApiKey?: string }): Promise<ModelInfo[]> {
   if (provider === "ollama") {
     const url = config.ollamaUrl?.replace(/\/$/, '') || "http://localhost:11434";
     const response = await fetch(`${url}/api/tags`);
@@ -556,6 +562,15 @@ export async function fetchModels(provider: Provider, config: { openRouterKey?: 
           }
         };
       });
+  }
+
+  if (provider === "anthropic") {
+    // Stub for now
+    return [
+      { id: "claude-3-opus-20240229", name: "Claude 3 Opus", capabilities: { vision: true } },
+      { id: "claude-3-sonnet-20240229", name: "Claude 3 Sonnet", capabilities: { vision: true } },
+      { id: "claude-3-haiku-20240307", name: "Claude 3 Haiku", capabilities: { vision: true } },
+    ];
   }
 
   return [];

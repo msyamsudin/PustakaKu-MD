@@ -13,7 +13,7 @@ type LogListener = (entry: LogEntry) => void;
 class Logger {
   private listeners: LogListener[] = [];
   private logs: LogEntry[] = [];
-  private maxLogs = 100;
+  private maxLogs = 500;
 
   subscribe(listener: LogListener) {
     this.listeners.push(listener);

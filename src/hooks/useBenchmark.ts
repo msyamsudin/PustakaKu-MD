@@ -12,9 +12,11 @@ import type {
   BenchmarkScenario,
   BenchmarkResult,
   BenchmarkPageResult,
+  BenchmarkStatus,
 } from "../lib/utils/types";
 
 const COOLDOWN_MS = 2000;
+const STAGGER_MS = 200;
 
 // ── Settings helpers ──────────────────────────────────────────────────────────
 
@@ -39,14 +41,25 @@ export function verifyScenario(
     }
   }
 
+  if (scenario.provider === "anthropic") {
+    if (!cfg.anthropicApiKey?.trim()) {
+      return { valid: false, reason: "Anthropic API Key not configured in Settings." };
+    }
+  }
+
   if (scenario.provider === "ollama") {
-    // Ollama uses local URL, always technically "valid" if installed
+    if (!cfg.ollamaModel?.trim() && !cfg.selectedModel?.trim()) {
+      return { valid: false, reason: "Ollama model not configured in Settings." };
+    }
     return { valid: true };
   }
 
   if (scenario.provider === "openrouter") {
     if (!cfg.openRouterKey?.trim()) {
       return { valid: false, reason: "OpenRouter API Key not configured in Settings." };
+    }
+    if (!cfg.openRouterModel?.trim() && !cfg.selectedModel?.trim()) {
+      return { valid: false, reason: "OpenRouter model not configured." };
     }
     if (scenario.imageInputMode === "supabase") {
       if (!cfg.supabaseProjectId?.trim()) {
@@ -58,7 +71,15 @@ export function verifyScenario(
     }
   }
 
-  if (!cfg.selectedModel?.trim()) {
+  // Final: ensure at least one resolvable model exists for this provider
+  // (mirrors the model resolution logic in runBenchmark)
+  const resolvedModel =
+    (scenario.provider === "google" && cfg.googleModel?.trim()) ||
+    (scenario.provider === "openrouter" && cfg.openRouterModel?.trim()) ||
+    (scenario.provider === "anthropic" && cfg.anthropicModel?.trim()) ||
+    cfg.selectedModel?.trim();
+
+  if (!resolvedModel) {
     return { valid: false, reason: "No model selected in Settings." };
   }
 
@@ -188,27 +209,23 @@ export function useBenchmark(): UseBenchmarkReturn {
 
           // Accumulators
           const pageResults: BenchmarkPageResult[] = [];
-          const ttftValues: number[] = [];
-          const uploadValues: number[] = [];
-          let sumTtft = 0;
-          let ttftCount = 0;
-          let sumUpload = 0;
-          let sumPrompt = 0;
-          let sumCompletion = 0;
-          let sumPayload = 0;
-          let sumOutputChars = 0;
-          let sumActualCost = 0;
-          let pagesFailed = 0;
+          let firstPageStartMs: number | undefined;
+          let lastPageEndMs: number | undefined;
           const scenarioStart = performance.now();
 
           // Determine the correct model for this provider (fixed per scenario)
           let modelToUse = cfg.selectedModel;
           if (scenario.provider === "google" && cfg.googleModel) modelToUse = cfg.googleModel;
           else if (scenario.provider === "openrouter" && cfg.openRouterModel) modelToUse = cfg.openRouterModel;
+          else if (scenario.provider === "anthropic" && cfg.anthropicModel) modelToUse = cfg.anthropicModel;
           else if (scenario.provider === "ollama" && cfg.ollamaModel) modelToUse = cfg.ollamaModel;
 
           const processPage = async (pi: number) => {
-            if (stopRef.current || abortRef.current?.signal.aborted) return;
+            if (stopRef.current || abortRef.current?.signal.aborted) {
+              // Record skipped page so pagesProcessed + pagesFailed + skipped = total
+              pageResults.push({ pageNum: pageNums[pi], errorMessage: "Stopped by user." });
+              return;
+            }
 
             const pageNum = pageNums[pi];
             const pageResult: BenchmarkPageResult = { pageNum };
@@ -229,7 +246,11 @@ export function useBenchmark(): UseBenchmarkReturn {
               let base64 = "";
               let imageUrl: string | undefined;
               let uploadedPath: string | null = null;
-              const uploadStart = performance.now();
+              if (firstPageStartMs === undefined) {
+               firstPageStartMs = performance.now();
+             }
+
+             const uploadStart = performance.now();
 
               if (scenario.imageInputMode === "google_files") {
                 patchResult(scenario.id, { currentTask: `Uploading pg. ${pageNum} to Google...`, taskStartTime: performance.now() });
@@ -262,8 +283,7 @@ export function useBenchmark(): UseBenchmarkReturn {
                 }
                 if (fileObj.state === "FAILED") throw new Error("Files API processing failed.");
                 imageUrl = fileObj.uri;
-                // Pass mimeType hint via base64Image so api.ts uses the correct type
-                base64 = `data:${mimeType};base64,`;
+                base64 = "";
                 pageResult.requestPayloadKb = new Blob([imageUrl ?? ""]).size / 1024;
               } else if (scenario.imageInputMode === "supabase" && supabaseConfig) {
                 patchResult(scenario.id, { currentTask: `Uploading pg. ${pageNum} to Supabase...`, taskStartTime: performance.now() });
@@ -276,8 +296,7 @@ export function useBenchmark(): UseBenchmarkReturn {
                   calculateAdaptiveTTL(pageNums.length - pi)
                 );
                 pageResult.requestPayloadKb = new Blob([imageUrl ?? ""]).size / 1024;
-                // Pass mimeType hint so api.ts sends the correct Content-Type in the request
-                base64 = `data:${mimeType};base64,`;
+                base64 = "";
               } else {
                 patchResult(scenario.id, { currentTask: `Encoding pg. ${pageNum} to Base64...`, taskStartTime: performance.now() });
                 // base64 encode
@@ -293,10 +312,6 @@ export function useBenchmark(): UseBenchmarkReturn {
             }
 
             logger.debug(`[Benchmark] ${scenario.label} - pg. ${pageNum} ${scenario.imageInputMode} prep done: ${Math.round(pageResult.uploadDurationMs)}ms (${pageResult.imageSizeKb?.toFixed(1)} KB image, eff: ${pageResult.payloadEfficiency?.toFixed(1)}%)`);
-            
-            sumUpload += pageResult.uploadDurationMs;
-            uploadValues.push(pageResult.uploadDurationMs);
-            sumPayload += pageResult.requestPayloadKb ?? 0;
 
             // ── AI extraction ───────────────────────────────────────────
               let firstChunk = false;
@@ -313,10 +328,12 @@ export function useBenchmark(): UseBenchmarkReturn {
                 openRouterKey: cfg.openRouterKey,
                 googleApiKey: cfg.googleApiKey,
                 ollamaUrl: cfg.ollamaUrl,
+                anthropicApiKey: cfg.anthropicApiKey,
                 model: modelToUse,
                 base64Image: base64,
                 imageInputMode: scenario.imageInputMode,
                 imageUrl,
+                mimeType,
                 signal: abortRef.current?.signal,
                 onChunk: () => {
                   if (!firstChunk) {
@@ -331,9 +348,9 @@ export function useBenchmark(): UseBenchmarkReturn {
               pageResult.durationMs = performance.now() - uploadStart; // full page time
               pageResult.promptTokens = result.usage?.prompt_tokens;
               pageResult.completionTokens = result.usage?.completion_tokens;
-              
-              if ((result.usage as any)?.total_cost) {
-                sumActualCost += (result.usage as any).total_cost;
+              pageResult.markdown = result.markdown;
+              if (typeof result.cost === 'number') {
+                pageResult.cost = result.cost;
               }
 
               logger.success(`[Benchmark] ${scenario.label} - pg. ${pageNum} complete`, {
@@ -345,44 +362,39 @@ export function useBenchmark(): UseBenchmarkReturn {
                 duration: Math.round(pageResult.durationMs)
               });
 
-              if (pageResult.ttftMs !== undefined) {
-                sumTtft += pageResult.ttftMs;
-                ttftValues.push(pageResult.ttftMs);
-                ttftCount++;
-              }
-              sumPrompt += result.usage?.prompt_tokens ?? 0;
-              sumCompletion += result.usage?.completion_tokens ?? 0;
-              sumOutputChars += result.markdown.length;
-
               // ── Supabase cleanup ────────────────────────────────────────
               if (uploadedPath && supabaseConfig) {
-                await deleteFromSupabase(uploadedPath, supabaseConfig).catch(() => {});
+                await deleteFromSupabase(uploadedPath, supabaseConfig).catch((e) => {
+                  logger.warn(`[Benchmark] Supabase cleanup failed for ${uploadedPath}`, { error: String(e) });
+                });
               }
             } catch (err: any) {
               if (err.name === "AbortError") {
                 pageResult.errorMessage = "Stopped by user.";
-                pageResults.push(pageResult);
-                pagesFailed++;
-                return;
+              } else {
+                pageResult.errorMessage = err.message || String(err);
+                logger.error(`[Benchmark] ${scenario.label} - pg. ${pageNum} failed`, { 
+                  provider: scenario.provider,
+                  model: modelToUse,
+                  imageMode: scenario.imageInputMode,
+                  error: pageResult.errorMessage 
+                });
               }
-              pageResult.errorMessage = err.message || String(err);
-              pagesFailed++;
-              logger.error(`[Benchmark] ${scenario.label} - pg. ${pageNum} failed`, { 
-                provider: scenario.provider,
-                model: modelToUse,
-                imageMode: scenario.imageInputMode,
-                error: pageResult.errorMessage 
-              });
             }
 
             pageResults.push(pageResult);
+            lastPageEndMs = performance.now();
 
-            const successCount = pageResults.filter((p) => !p.errorMessage).length;
+            const sDone = pageResults.filter(p => !p.errorMessage);
+            const sFail = pageResults.filter(p => p.errorMessage);
+
             patchResult(scenario.id, {
-              pagesProcessed: successCount,
-              pagesFailed,
+              pagesProcessed: sDone.length,
+              pagesFailed: sFail.length,
               pageResults: [...pageResults],
-              // Don't clear currentTask here as other pages might still be running
+              // Add simple progress stats
+              promptTokens: sDone.reduce((acc, p) => acc + (p.promptTokens || 0), 0),
+              completionTokens: sDone.reduce((acc, p) => acc + (p.completionTokens || 0), 0),
             });
           };
 
@@ -392,7 +404,7 @@ export function useBenchmark(): UseBenchmarkReturn {
             
             // Stagger parallel tasks slightly to avoid sudden resource spikes
             const tasks = Array.from({ length: pageNums.length }, async (_, i) => {
-              if (i > 0) await new Promise(r => setTimeout(r, i * 200));
+              if (i > 0) await new Promise(r => setTimeout(r, i * STAGGER_MS));
               return processPage(i);
             });
             await Promise.all(tasks);
@@ -407,56 +419,93 @@ export function useBenchmark(): UseBenchmarkReturn {
 
           // ── Aggregate scenario result ─────────────────────────────────────
           const totalDurationMs = performance.now() - scenarioStart;
-          const successPages = pageResults.filter((p) => !p.errorMessage);
+          const finalPages = [...pageResults];
+          const successPages = finalPages.filter((p) => !p.errorMessage);
+          const failedCount = finalPages.filter(p => p.errorMessage).length;
 
-          const estimatedCostUsd = sumActualCost > 0 ? sumActualCost : undefined;
+          // Derive cost from per-page results — consistent with all other aggregates (no mutable accumulator)
+          const costPages = successPages.filter(p => typeof p.cost === 'number');
+          const estimatedCostUsd = costPages.length > 0
+            ? costPages.reduce((acc, p) => acc + p.cost!, 0)
+            : undefined;
+
+          // Recalculate all aggregates from finalPages to ensure consistency
+          const totalPrompt = successPages.reduce((acc, p) => acc + (p.promptTokens || 0), 0);
+          const totalCompletion = successPages.reduce((acc, p) => acc + (p.completionTokens || 0), 0);
+          const totalOutputChars = successPages.reduce((acc, p) => acc + (p.markdown?.length || 0), 0);
+          const totalImageSize = successPages.reduce((acc, p) => acc + (p.imageSizeKb || 0), 0);
+          const totalPayload = successPages.reduce((acc, p) => acc + (p.requestPayloadKb || 0), 0);
+          const totalEfficiency = successPages.reduce((acc, p) => acc + (p.payloadEfficiency || 0), 0);
+          const ttftSuccessful = successPages.filter(p => p.ttftMs !== undefined);
+          const totalTtft = ttftSuccessful.reduce((acc, p) => acc + (p.ttftMs || 0), 0);
+          const ttftList = ttftSuccessful.map(p => p.ttftMs!);
+          const uploadList = successPages.filter(p => p.uploadDurationMs !== undefined).map(p => p.uploadDurationMs!);
 
           logger.info(`[Benchmark] Scenario ${scenario.label} complete`, {
             provider: scenario.provider,
             model: modelToUse,
             imageMode: scenario.imageInputMode,
-            avgTtft: ttftCount > 0 ? Math.round(sumTtft / ttftCount) : 0,
+            avgTtft: ttftList.length > 0 ? Math.round(totalTtft / ttftList.length) : 0,
             totalTime: Math.round(totalDurationMs),
-            totalTokens: sumPrompt + sumCompletion,
-            cost: sumActualCost > 0 ? sumActualCost : "N/A"
+            totalTokens: totalPrompt + totalCompletion,
+            cost: estimatedCostUsd !== undefined ? estimatedCostUsd : "N/A"
           });
 
-          const totalGenTimeMs = successPages.reduce((acc, p) => {
-            const genTime = (p.durationMs || 0) - (p.uploadDurationMs || 0) - (p.ttftMs || 0);
-            return acc + Math.max(0, genTime);
-          }, 0);
+          // Accurate TPS calculation logic based on mode
+          const tps = (() => {
+            if (options?.isParallel) {
+              // Mode Parallel: Gunakan throughput (span dari page pertama mulai hingga coroutine terakhir selesai)
+              const parallelSpanMs = (firstPageStartMs !== undefined && lastPageEndMs !== undefined)
+                ? (lastPageEndMs - firstPageStartMs) 
+                : totalDurationMs;
+              return parallelSpanMs > 0 ? totalCompletion / (parallelSpanMs / 1000) : 0;
+            } else {
+              // Mode Serial: Gunakan akumulasi waktu AI murni (Kecepatan Generasi)
+              const totalAiTimeMs = successPages.reduce((acc, p) => {
+                const aiTime = (p.durationMs || 0) - (p.uploadDurationMs || 0);
+                return acc + Math.max(0, aiTime);
+              }, 0);
+              return totalAiTimeMs > 0 ? totalCompletion / (totalAiTimeMs / 1000) : 0;
+            }
+          })();
+
+          const getFinalStatus = (): BenchmarkStatus => {
+            if (failedCount === pageNums.length) return "error";
+            if (failedCount > 0) return "partial";
+            return "done";
+          };
 
           patchResult(scenario.id, {
-            status: pagesFailed === pageNums.length ? "error" : "done",
+            status: getFinalStatus(),
             currentTask: undefined,
             taskStartTime: undefined,
             pagesProcessed: successPages.length,
-            pagesFailed,
+            pagesFailed: failedCount,
             totalDurationMs,
-            avgTtftMs: ttftCount > 0 ? sumTtft / ttftCount : undefined,
-            minTtftMs: ttftValues.length > 0 ? Math.min(...ttftValues) : undefined,
-            maxTtftMs: ttftValues.length > 0 ? Math.max(...ttftValues) : undefined,
-            stdDevTtftMs: ttftValues.length > 0 ? calculateStdDev(ttftValues) : undefined,
-            avgUploadMs: successPages.length > 0 ? sumUpload / successPages.length : undefined,
-            minUploadMs: uploadValues.length > 0 ? Math.min(...uploadValues) : undefined,
-            maxUploadMs: uploadValues.length > 0 ? Math.max(...uploadValues) : undefined,
-            stdDevUploadMs: uploadValues.length > 0 ? calculateStdDev(uploadValues) : undefined,
-            promptTokens: sumPrompt,
-            completionTokens: sumCompletion,
-            totalTokens: sumPrompt + sumCompletion,
+            avgTtftMs: ttftList.length > 0 ? totalTtft / ttftList.length : undefined,
+            minTtftMs: ttftList.length > 0 ? Math.min(...ttftList) : undefined,
+            maxTtftMs: ttftList.length > 0 ? Math.max(...ttftList) : undefined,
+            stdDevTtftMs: ttftList.length > 0 ? calculateStdDev(ttftList) : undefined,
+            avgUploadMs: uploadList.length > 0 ? uploadList.reduce((a, b) => a + b, 0) / uploadList.length : undefined,
+            minUploadMs: uploadList.length > 0 ? Math.min(...uploadList) : undefined,
+            maxUploadMs: uploadList.length > 0 ? Math.max(...uploadList) : undefined,
+            stdDevUploadMs: uploadList.length > 0 ? calculateStdDev(uploadList) : undefined,
+            promptTokens: totalPrompt,
+            completionTokens: totalCompletion,
+            totalTokens: totalPrompt + totalCompletion,
             avgTokensPerPage:
               successPages.length > 0
-                ? Math.round((sumPrompt + sumCompletion) / successPages.length)
+                ? Math.round((totalPrompt + totalCompletion) / successPages.length)
                 : undefined,
-            tps: totalGenTimeMs > 0 ? sumCompletion / (totalGenTimeMs / 1000) : 0,
+            tps,
             modelUsed: modelToUse,
             estimatedCostUsd,
-            avgPayloadKb: successPages.length > 0 ? sumPayload / successPages.length : undefined,
-            avgImageSizeKb: successPages.length > 0 ? successPages.reduce((a, p) => a + (p.imageSizeKb || 0), 0) / successPages.length : undefined,
+            avgPayloadKb: successPages.length > 0 ? totalPayload / successPages.length : undefined,
+            avgImageSizeKb: successPages.length > 0 ? totalImageSize / successPages.length : undefined,
             avgPayloadEfficiency: successPages.length > 0 
-              ? successPages.reduce((a, p) => a + (p.payloadEfficiency || 0), 0) / successPages.length 
+              ? totalEfficiency / successPages.length 
               : undefined,
-            totalOutputChars: sumOutputChars,
+            totalOutputChars: totalOutputChars,
             pageResults,
           });
 

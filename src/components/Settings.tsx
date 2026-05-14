@@ -24,12 +24,14 @@ export function Settings() {
   const [settings, setSettings] = useState({
     provider: "ollama" as Provider,
     openRouterKey: "",
+    anthropicApiKey: "",
     ollamaUrl: "http://localhost:11434",
     googleApiKey: "",
     selectedModel: "",
     // Per-provider models
     googleModel: "",
     openRouterModel: "",
+    anthropicModel: "",
     ollamaModel: "",
     imageInputMode: "base64" as ImageInputMode,
     supabaseProjectId: "",
@@ -101,6 +103,7 @@ export function Settings() {
     try {
       const fetched = await fetchModels(settings.provider, {
         openRouterKey: settings.openRouterKey,
+        anthropicApiKey: settings.anthropicApiKey,
         ollamaUrl: settings.ollamaUrl,
         googleApiKey: settings.googleApiKey
       });
@@ -147,6 +150,7 @@ export function Settings() {
       if (key === "provider") {
         if (value === "google") next.selectedModel = prev.googleModel || "";
         if (value === "openrouter") next.selectedModel = prev.openRouterModel || "";
+        if (value === "anthropic") next.selectedModel = prev.anthropicModel || "";
         if (value === "ollama") next.selectedModel = prev.ollamaModel || "";
       }
       
@@ -154,6 +158,7 @@ export function Settings() {
       if (key === "selectedModel") {
         if (prev.provider === "google") next.googleModel = value;
         if (prev.provider === "openrouter") next.openRouterModel = value;
+        if (prev.provider === "anthropic") next.anthropicModel = value;
         if (prev.provider === "ollama") next.ollamaModel = value;
       }
       
@@ -230,7 +235,7 @@ export function Settings() {
             {/* Provider Toggle */}
             <div>
               <label className={labelCls}>Provider Selection</label>
-              <div className="grid grid-cols-3 gap-2 p-1 bg-secondary/50 rounded-xl border border-border">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-1 bg-secondary/50 rounded-xl border border-border">
                 <button
                   onClick={() => {
                     updateSetting("provider", "ollama");
@@ -260,6 +265,16 @@ export function Settings() {
                 >
                   <Zap size={14} />
                   Google
+                </button>
+                <button
+                  onClick={() => {
+                    updateSetting("provider", "anthropic");
+                    updateSetting("imageInputMode", "base64");
+                  }}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${settings.provider === "anthropic" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  <Cloud size={14} />
+                  Anthropic
                 </button>
               </div>
             </div>
@@ -299,6 +314,29 @@ export function Settings() {
                       onChange={e => updateSetting("googleApiKey", e.target.value)}
                       className={inputCls}
                       placeholder="AIzaSy..."
+                    />
+                    <button
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
+                    <Info size={10} />
+                    Your API key is stored locally in your browser's local storage.
+                  </p>
+                </div>
+              ) : settings.provider === "anthropic" ? (
+                <div className="space-y-1.5">
+                  <label className={labelCls}>Anthropic API Key</label>
+                  <div className="relative group">
+                    <input
+                      type={showApiKey ? "text" : "password"}
+                      value={settings.anthropicApiKey || ""}
+                      onChange={e => updateSetting("anthropicApiKey", e.target.value)}
+                      className={inputCls}
+                      placeholder="sk-ant-api03-..."
                     />
                     <button
                       onClick={() => setShowApiKey(!showApiKey)}
@@ -492,7 +530,7 @@ export function Settings() {
                 <label className={labelCls}>Vision Model</label>
                 <button
                   onClick={handleFetchModels}
-                  disabled={isLoadingModels || (settings.provider === "openrouter" && !settings.openRouterKey) || (settings.provider === "google" && !settings.googleApiKey)}
+                  disabled={isLoadingModels || (settings.provider === "openrouter" && !settings.openRouterKey) || (settings.provider === "google" && !settings.googleApiKey) || (settings.provider === "anthropic" && !settings.anthropicApiKey)}
                   className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-primary hover:text-primary/80 disabled:opacity-40 transition-colors"
                 >
                   <RefreshCw size={12} className={isLoadingModels ? "animate-spin" : ""} />

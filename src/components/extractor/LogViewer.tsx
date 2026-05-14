@@ -21,6 +21,41 @@ function calculateStdDev(values: number[]): number {
   return Math.sqrt(avgSquareDiff);
 }
 
+function calculateElapsedDuration(logs: LogEntry[]): number {
+  const intervals = logs
+    .filter(log => log.level === "success" && log.details?.duration)
+    .map(log => {
+      const endTime = log.timestamp.getTime();
+      const startTime = endTime - (log.details.duration * 1000);
+      return { start: startTime, end: endTime };
+    });
+
+  if (intervals.length === 0) return 0;
+
+  // Sort by start time
+  intervals.sort((a, b) => a.start - b.start);
+
+  let totalMs = 0;
+  let currentStart = intervals[0].start;
+  let currentEnd = intervals[0].end;
+
+  for (let i = 1; i < intervals.length; i++) {
+    const next = intervals[i];
+    if (next.start < currentEnd) {
+      // Overlap, extend current interval
+      currentEnd = Math.max(currentEnd, next.end);
+    } else {
+      // No overlap, add current interval to total and start new one
+      totalMs += currentEnd - currentStart;
+      currentStart = next.start;
+      currentEnd = next.end;
+    }
+  }
+  totalMs += currentEnd - currentStart;
+
+  return totalMs / 1000;
+}
+
 export function LogViewer() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -36,7 +71,7 @@ export function LogViewer() {
     setLogs(logger.getLogs());
 
     const unsubscribe = logger.subscribe((entry) => {
-      setLogs((prev) => [...prev, entry].slice(-200));
+      setLogs((prev) => [...prev, entry].slice(-500));
     });
 
     return unsubscribe;
@@ -70,7 +105,7 @@ export function LogViewer() {
     (acc, log) => {
       if (log.level === "success" && log.details) {
         acc.totalTokens += Number(log.details.tokens || log.details.total_tokens || 0);
-        acc.totalDuration += Number(log.details.duration || 0);
+        acc.totalComputeTime += Number(log.details.duration || 0);
         acc.totalCost += Number(log.details.cost || log.details.total_cost || 0);
         acc.successCount += 1;
         if (typeof log.details.ttft === "number") {
@@ -83,7 +118,7 @@ export function LogViewer() {
     },
     {
       totalTokens: 0,
-      totalDuration: 0,
+      totalComputeTime: 0,
       totalCost: 0,
       successCount: 0,
       errorCount: 0,
@@ -97,9 +132,11 @@ export function LogViewer() {
   
   const stdDevTtft = calculateStdDev(summary.ttftValues);
 
+  const totalElapsedDuration = calculateElapsedDuration(logs);
+
   const avgTokensPerSec =
-    summary.totalDuration > 0
-      ? (summary.totalTokens / summary.totalDuration).toFixed(1)
+    totalElapsedDuration > 0
+      ? (summary.totalTokens / totalElapsedDuration).toFixed(1)
       : "0";
 
 
@@ -389,7 +426,7 @@ export function LogViewer() {
 
                   <div className="flex flex-col gap-0.5">
                     <span className="text-muted-foreground/40 text-[9px] uppercase tracking-widest">Duration</span>
-                    <span className="text-sky-400 font-black text-base">{summary.totalDuration.toFixed(1)}<span className="text-[10px] ml-1 opacity-50 uppercase">sec</span></span>
+                    <span className="text-sky-400 font-black text-base">{totalElapsedDuration.toFixed(1)}<span className="text-[10px] ml-1 opacity-50 uppercase">sec</span></span>
                   </div>
 
                   <div className="flex flex-col gap-0.5 border-l border-white/5 pl-10">
@@ -412,7 +449,7 @@ export function LogViewer() {
                   {summary.totalCost > 0 && (
                     <div className="flex flex-col gap-0.5 border-l border-white/5 pl-10">
                       <span className="text-muted-foreground/40 text-[9px] uppercase tracking-widest">Expense</span>
-                      <span className="text-emerald-400 font-black text-base">${summary.totalCost.toFixed(4)}</span>
+                      <span className="text-emerald-400 font-black text-base">${summary.totalCost.toFixed(5)}</span>
                     </div>
                   )}
                 </div>
@@ -569,7 +606,7 @@ function LogItem({
 
       {/* COST */}
       <div className="truncate text-emerald-400/80 font-bold">
-        {typeof cost === 'number' ? `$${cost.toFixed(5)}` : "—"}
+        {typeof cost === 'number' && cost > 0 ? `$${cost.toFixed(6)}` : (typeof cost === 'number' && cost === 0 && provider !== 'system' ? "FREE" : "—")}
       </div>
 
       {/* OUTPUT DETAILS */}

@@ -12,8 +12,10 @@ export interface AppConfig {
   provider: string;
   selectedModel: string;
   openRouterKey?: string;
+  anthropicApiKey?: string;
   ollamaUrl?: string;
   googleApiKey?: string;
+  anthropicModel?: string;
   imageInputMode?: ImageInputMode;  // default: "base64"
   supabaseProjectId?: string;        // project reference ID (e.g. "abcdefghijklmnop")
   supabaseServiceKey?: string;      // service_role / secret key
@@ -45,7 +47,7 @@ export interface BenchmarkScenario {
   imageInputMode: ImageInputMode;
 }
 
-export type BenchmarkStatus = "pending" | "running" | "done" | "error" | "skipped";
+export type BenchmarkStatus = "pending" | "running" | "done" | "error" | "skipped" | "partial";
 
 /** Per-page result collected during batch extraction */
 export interface BenchmarkPageResult {
@@ -60,6 +62,8 @@ export interface BenchmarkPageResult {
   payloadEfficiency?: number;  // (imageSize - payloadSize) / imageSize * 100
   width?: number;
   height?: number;
+  markdown?: string;
+  cost?: number;           // API-reported cost for this page (USD), if available
   errorMessage?: string;
 }
 

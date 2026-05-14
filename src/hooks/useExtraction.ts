@@ -38,6 +38,7 @@ export function useExtraction(deps: ExtractionDeps) {
   const [isPageExtracting, setIsPageExtracting] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [usage, setUsage] = useState<ExtractionResult["usage"] | null>(null);
+  const [cost, setCost] = useState<number | null>(null);
   const [extractDuration, setExtractDuration] = useState<number | null>(null);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<BatchProgress>({
@@ -92,11 +93,19 @@ export function useExtraction(deps: ExtractionDeps) {
       }
 
       const config = JSON.parse(savedSettings);
-      if (!config.provider || !config.selectedModel) {
+      
+      // Resolve correct model (mirrors benchmark logic)
+      const modelToUse = 
+        (config.provider === "google" && config.googleModel) ||
+        (config.provider === "openrouter" && config.openRouterModel) ||
+        (config.provider === "anthropic" && config.anthropicModel) ||
+        (config.provider === "ollama" && config.ollamaModel) ||
+        config.selectedModel;
+
+      if (!config.provider || !modelToUse) {
         throw new Error("Incomplete API configuration. Please check your settings.");
       }
 
-      const startTime = performance.now();
       logger.info(`Extracting page ${deps.currentPdfPage}...`);
 
       const blob: Blob = deps.previewUrl.startsWith("data:")
@@ -108,6 +117,8 @@ export function useExtraction(deps: ExtractionDeps) {
 
       deps.setMarkdown("");
       updateStreamingActivity(true);
+      
+      const startTime = performance.now(); // Start timing AFTER render is finished
 
       const useSupabase =
         config.provider === "openrouter" &&
@@ -145,7 +156,7 @@ export function useExtraction(deps: ExtractionDeps) {
           openRouterKey: config.openRouterKey,
           ollamaUrl: config.ollamaUrl,
           googleApiKey: config.googleApiKey,
-          model: config.selectedModel,
+          model: modelToUse,
           base64Image: base64,
           imageInputMode: useSupabase ? "supabase" : (config.imageInputMode === "google_files" ? "google_files" : "base64"),
           imageUrl: extractionImageUrl,
@@ -178,11 +189,14 @@ export function useExtraction(deps: ExtractionDeps) {
           return next;
         });
         setUsage(result.usage);
-        updateStats(result, deps.file?.name || "unknown", duration);
+        setCost(result.cost ?? null);
+        updateStats(result, deps.file?.path || "", deps.file?.name || "unknown", duration);
       } finally {
         // Always clean up the uploaded file, even if extraction fails
         if (uploadedPath && supabaseConfig) {
-          await deleteFromSupabase(uploadedPath, supabaseConfig);
+          await deleteFromSupabase(uploadedPath, supabaseConfig).catch((e) => {
+            logger.warn(`[Supabase] Cleanup failed for ${uploadedPath}`, { error: String(e) });
+          });
         }
       }
     } catch (e: any) {
@@ -235,7 +249,10 @@ export function useExtraction(deps: ExtractionDeps) {
 
       // Helper to process a single page
       const processPageTask = async (pageNum: number, index: number) => {
-        if (stopBatchRef.current || abortControllerRef.current?.signal.aborted) return;
+        if (stopBatchRef.current || abortControllerRef.current?.signal.aborted) {
+          setBatchProgress(prev => ({ ...prev, current: prev.current + 1 }));
+          return;
+        }
 
         try {
           setBatchProgress((prev) => ({
@@ -278,6 +295,13 @@ export function useExtraction(deps: ExtractionDeps) {
             }));
           }
 
+          const modelToUse = 
+            (config.provider === "google" && config.googleModel) ||
+            (config.provider === "openrouter" && config.openRouterModel) ||
+            (config.provider === "anthropic" && config.anthropicModel) ||
+            (config.provider === "ollama" && config.ollamaModel) ||
+            config.selectedModel;
+
           const startTime = performance.now();
           const useSupabase =
             config.provider === "openrouter" &&
@@ -319,7 +343,7 @@ export function useExtraction(deps: ExtractionDeps) {
             openRouterKey: config.openRouterKey,
             ollamaUrl: config.ollamaUrl,
             googleApiKey: config.googleApiKey,
-            model: config.selectedModel,
+            model: modelToUse,
             base64Image: base64,
             imageInputMode: useSupabase ? "supabase" : (config.imageInputMode === "google_files" ? "google_files" : "base64"),
             imageUrl: extractionImageUrl,
@@ -345,18 +369,21 @@ export function useExtraction(deps: ExtractionDeps) {
               );
             return next;
           });
-          updateStats(result, deps.file?.name || "unknown", duration);
+          updateStats(result, deps.file?.path || "", deps.file?.name || "unknown", duration);
 
           if (!isParallel) {
             deps.setMarkdown(processedMarkdown);
             setUsage(result.usage);
+            setCost(result.cost ?? null);
             setExtractDuration(duration);
           }
         } finally {
           if (!isParallel) setIsPageExtracting(false);
           updateStreamingActivity(false);
           if (uploadedPath && supabaseConfig) {
-            await deleteFromSupabase(uploadedPath, supabaseConfig);
+            await deleteFromSupabase(uploadedPath, supabaseConfig).catch((e) => {
+              logger.warn(`[Supabase] Cleanup failed for ${uploadedPath} (Batch pg. ${pageNum})`, { error: String(e) });
+            });
           }
         }
       } catch (e: any) {
@@ -446,6 +473,8 @@ export function useExtraction(deps: ExtractionDeps) {
     isStreaming,
     usage,
     setUsage,
+    cost,
+    setCost,
     extractDuration,
     setExtractDuration,
     isBatchProcessing,

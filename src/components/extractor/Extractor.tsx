@@ -52,7 +52,7 @@ export function Extractor() {
     handleBatchDeleteMarkdown, handleBatchCopyMarkdown,
   } = mdCache;
   const {
-    isExtracting, isPageExtracting, isStreaming, usage, setUsage, extractDuration, setExtractDuration,
+    isExtracting, isPageExtracting, isStreaming, usage, setUsage, cost, setCost, extractDuration, setExtractDuration,
     isBatchProcessing, batchProgress, selectedPages, setSelectedPages,
     handleExtract, handleBatchExtract, handleCancel,
     togglePageSelection, selectAllPages, selectUnextractedPages,
@@ -120,6 +120,7 @@ export function Extractor() {
       if (result.previewBlobUrl) setPreviewUrl(result.previewBlobUrl);
       setMarkdown(result.savedExtractions[result.validPage] || "");
       setUsage(null);
+      setCost(null);
       setExtractDuration(null);
       setSelectedPages(new Set());
       setShowPageGrid(false);
@@ -139,6 +140,7 @@ export function Extractor() {
     setCurrentPdfPage(1);
     setErrorMsg(null);
     setUsage(null);
+    setCost(null);
     setExtractDuration(null);
     setSelectedPages(new Set());
     setShowPageGrid(false);
@@ -183,6 +185,7 @@ export function Extractor() {
         showMarkdownGrid={showMarkdownGrid}
         selectedPagesCount={selectedPages.size}
         usage={usage}
+        cost={cost}
         extractDuration={extractDuration}
         onFileOpen={handleFileOpen}
         onCloseDocument={handleCloseDocument}
