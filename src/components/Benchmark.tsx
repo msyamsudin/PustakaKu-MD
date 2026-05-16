@@ -1,14 +1,13 @@
 import { useState, useCallback, useEffect } from "react";
 import {
-  FlaskConical, Square, RotateCcw, Download,
-  CheckCircle2, XCircle, Clock, Loader2, FileText,
-  AlertTriangle, Zap, ChevronDown, ChevronRight,
+  FlaskConical, Square, RotateCcw, Download, FileText,
+  Zap, ChevronDown, ChevronRight, Loader2, AlertTriangle,
   Cloud, HardDrive, ShieldCheck, ShieldX, Maximize2, X
 } from "lucide-react";
 import { useBenchmark, verifyScenario } from "../hooks/useBenchmark";
 import { getPdfPageCount } from "../lib/pdfUtils";
 import { BenchmarkConsole } from "./BenchmarkConsole";
-import type { BenchmarkScenario, BenchmarkResult, BenchmarkStatus } from "../lib/utils/types";
+import type { BenchmarkScenario, BenchmarkResult } from "../lib/utils/types";
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 const fmt = (ms?: number) => ms === undefined ? "—" : ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;
@@ -31,22 +30,22 @@ function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
   const headers = [
     "Scenario", "Status", "Model", "Execution Mode", "Pages OK", "Pages Failed", "Total Duration",
     "Avg TTFT", "Min TTFT", "Max TTFT", "StdDev TTFT",
-    "TPS", 
+    "TPS",
     "Avg Upload", "Min Upload", "Max Upload", "StdDev Upload",
     "Prompt Tokens", "Completion Tokens", "Avg Tokens/Page",
     "Avg Payload KB", "Avg Image KB", "Payload Efficiency", "Est. Cost USD", "Total Output Chars", "Resolution", "Error"
   ];
   const rows = results.map((r: BenchmarkResult) => [
     r.label, r.status, r.modelUsed || model, r.isParallel ? "Parallel" : "Sequential", r.pagesProcessed, r.pagesFailed,
-    r.totalDurationMs ?? "", 
+    r.totalDurationMs ?? "",
     r.avgTtftMs?.toFixed(0) ?? "", r.minTtftMs?.toFixed(0) ?? "", r.maxTtftMs?.toFixed(0) ?? "", r.stdDevTtftMs?.toFixed(0) ?? "",
-    r.tps?.toFixed(1) ?? "0", 
+    r.tps?.toFixed(1) ?? "0",
     r.avgUploadMs?.toFixed(0) ?? "", r.minUploadMs?.toFixed(0) ?? "", r.maxUploadMs?.toFixed(0) ?? "", r.stdDevUploadMs?.toFixed(0) ?? "",
     r.promptTokens ?? "", r.completionTokens ?? "", r.avgTokensPerPage ?? "",
-    r.avgPayloadKb?.toFixed(2) ?? "", r.avgImageSizeKb?.toFixed(2) ?? "", 
+    r.avgPayloadKb?.toFixed(2) ?? "", r.avgImageSizeKb?.toFixed(2) ?? "",
     r.avgPayloadEfficiency !== undefined ? `${r.avgPayloadEfficiency.toFixed(1)}%` : "",
     r.estimatedCostUsd?.toFixed(6) ?? "",
-    r.totalOutputChars ?? "", 
+    r.totalOutputChars ?? "",
     r.pageResults[0] ? `${r.pageResults[0].width}x${r.pageResults[0].height}` : "—",
     r.errorMessage ?? ""
   ]);
@@ -63,7 +62,7 @@ function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
 // ── Live Timer for active tasks ──────────────────────────────────────────
 function LiveTimer({ startTime }: { startTime: number }) {
   const [elapsed, setElapsed] = useState(0);
-  
+
   useEffect(() => {
     const timer = setInterval(() => {
       setElapsed(performance.now() - startTime);
@@ -74,30 +73,7 @@ function LiveTimer({ startTime }: { startTime: number }) {
   return <span className="tabular-nums opacity-80">{fmt(elapsed)}</span>;
 }
 
-// ── Status badge ───────────────────────────────────────────────────────────────
-function StatusBadge({ status, currentTask, taskStartTime }: { status: BenchmarkStatus; currentTask?: string; taskStartTime?: number }) {
-  const map: Record<BenchmarkStatus, { icon: React.ReactNode; cls: string; label: string }> = {
-    pending: { icon: <Clock size={11} />, cls: "text-muted-foreground bg-secondary border-muted-foreground/20", label: "Pending" },
-    running: { icon: <Loader2 size={11} className="animate-spin" />, cls: "text-blue-400 bg-blue-400/10 border-blue-400/20", label: "Running…" },
-    done: { icon: <CheckCircle2 size={11} />, cls: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20", label: "Done" },
-    error: { icon: <XCircle size={11} />, cls: "text-rose-400 bg-rose-400/10 border-rose-400/20", label: "Error" },
-    skipped: { icon: <AlertTriangle size={11} />, cls: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20", label: "Skipped" },
-  };
-  const { icon, cls, label } = map[status];
-  return (
-    <div className="flex flex-col gap-1">
-      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-none text-[10px] font-bold border ${cls}`}>
-        {icon}{label}
-      </span>
-      {status === "running" && currentTask && (
-        <div className="flex items-center gap-2 text-[9px] text-blue-400/70 font-mono whitespace-nowrap animate-in fade-in slide-in-from-left-1">
-          <span className="shrink-0">└ {currentTask}</span>
-          {taskStartTime && <LiveTimer startTime={taskStartTime} />}
-        </div>
-      )}
-    </div>
-  );
-}
+
 
 // ── Scenario row (with expand for per-page detail) ─────────────────────────────
 function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkResult; isBest: boolean; isCheapest: boolean; isCompact?: boolean }) {
@@ -118,7 +94,7 @@ function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkRe
         <td className={`${tdCls} font-bold`}>
           <div className="flex items-center gap-1.5">
             {hasPages && (
-              <button onClick={() => setExpanded(e => !e)} className="text-muted-foreground/40 hover:text-primary transition-colors shrink-0">
+              <button onClick={() => setExpanded(e => !e)} className="text-muted-foreground hover:text-primary transition-colors shrink-0">
                 {expanded ? <ChevronDown size={isCompact ? 12 : 16} /> : <ChevronRight size={isCompact ? 12 : 16} />}
               </button>
             )}
@@ -127,49 +103,56 @@ function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkRe
               {r.label}
             </span>
           </div>
+          {r.status === "running" && r.currentTask && (
+            <div className="flex items-center gap-2 text-[9px] text-blue-400/70 font-mono whitespace-nowrap mt-1 ml-4 animate-in fade-in slide-in-from-left-1">
+              <span className="shrink-0">└ {r.currentTask}</span>
+              {r.taskStartTime && <LiveTimer startTime={r.taskStartTime} />}
+            </div>
+          )}
           {r.errorMessage && (
             <p className={`${isCompact ? "text-[9px]" : "text-xs"} text-rose-400/60 mt-0.5 ml-4 font-normal italic leading-tight`}>
               ! {r.errorMessage}
             </p>
           )}
         </td>
-        <td className={`${tdCls} text-muted-foreground/40 ${textCls}`}>{r.modelUsed || "—"}</td>
-        <td className={tdCls}><StatusBadge status={r.status} currentTask={r.currentTask} taskStartTime={r.taskStartTime} /></td>
-        <td className={`${tdCls} text-center text-muted-foreground/60 tabular-nums ${textCls}`}>
+        <td className={`${tdCls} text-center text-muted-foreground/80 tabular-nums ${textCls}`}>
           {r.status !== "pending" && r.status !== "skipped"
             ? `${r.pagesProcessed}/${r.pagesProcessed + r.pagesFailed}`
             : "—"}
         </td>
         <td className={`${tdCls} text-right font-bold tabular-nums ${textCls} ${isBest ? "text-emerald-400" : "text-foreground/80"}`}>{fmt(r.totalDurationMs)}</td>
-        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/60 ${textCls}`}>{fmt(r.avgTtftMs)}</td>
+        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/80 ${textCls}`}>{fmt(r.stdDevTtftMs)}</td>
         <td className={`${tdCls} text-right tabular-nums font-bold text-amber-400/80 ${textCls}`}>{r.tps?.toFixed(1) ?? "—"}</td>
-        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/40 ${textCls}`}>{fmt(r.avgUploadMs)}</td>
-        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/60 ${textCls}`}>
-          {r.promptTokens !== undefined
-            ? `${fmtNum(r.promptTokens + (r.completionTokens || 0))}`
-            : "—"}
+        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/70 ${textCls}`}>{fmt(r.avgUploadMs)}</td>
+        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/80 ${textCls}`}>
+          {r.promptTokens !== undefined ? fmtNum(r.promptTokens + (r.completionTokens || 0)) : "—"}
         </td>
-        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/40 ${textCls}`}>{fmtNum(r.avgTokensPerPage)}</td>
-        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/40 ${textCls}`}>{fmtKb(r.avgPayloadKb)}</td>
-        <td className={`${tdCls} text-right tabular-nums font-bold ${textCls} ${r.avgPayloadEfficiency !== undefined ? (r.avgPayloadEfficiency > 0 ? "text-emerald-400" : "text-rose-400") : "text-muted-foreground/40"}`}>
+        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/70 ${textCls}`}>{fmtKb(r.avgPayloadKb)}</td>
+        <td className={`${tdCls} text-right tabular-nums font-bold ${textCls} ${r.avgPayloadEfficiency !== undefined ? (r.avgPayloadEfficiency > 0 ? "text-emerald-400" : "text-rose-400") : "text-muted-foreground/70"}`}>
           {r.avgPayloadEfficiency !== undefined ? `${r.avgPayloadEfficiency > 0 ? "+" : ""}${r.avgPayloadEfficiency.toFixed(1)}%` : "—"}
         </td>
-        <td className={`${tdCls} text-right tabular-nums font-bold ${textCls} ${isCheapest ? "text-amber-400" : "text-muted-foreground/60"}`}>{fmtCost(r.estimatedCostUsd)}</td>
+        <td className={`${tdCls} text-right tabular-nums font-bold ${textCls} ${isCheapest ? "text-amber-400" : "text-muted-foreground/80"}`}>{fmtCost(r.estimatedCostUsd)}</td>
       </tr>
       {expanded && hasPages && r.pageResults.map(pr => (
-        <tr key={pr.pageNum} className={`bg-white/1 text-muted-foreground/30 border-b border-white/1 ${isCompact ? "text-[9px]" : "text-xs"}`}>
+        <tr key={pr.pageNum} className={`bg-white/1 text-muted-foreground/50 border-b border-white/1 ${isCompact ? "text-[9px]" : "text-xs"}`}>
           <td className={`${isCompact ? "pl-8" : "pl-12"} py-1.5 font-mono italic`}>└─ {isCompact ? "p" : "page_"}{pr.pageNum}</td>
           <td className={`${tdCls} py-1.5`}>—</td>
-          <td className={`${tdCls} py-1.5`}>
-            {pr.errorMessage ? (isCompact ? "FAIL" : "FAILED") : (isCompact ? "OK" : "SUCCESS")}
-          </td>
           <td className={`${tdCls} py-1.5 text-center`}>—</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.durationMs)}</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.ttftMs)}</td>
           <td className={`${tdCls} py-1.5 text-right`}>—</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.uploadDurationMs)}</td>
-          <td className={`${tdCls} py-1.5 text-right tabular-nums`}>
-            {pr.promptTokens !== undefined ? fmtNum(pr.promptTokens + (pr.completionTokens || 0)) : "—"}
+          <td className={`${tdCls} py-1.5 text-right tabular-nums text-muted-foreground/80`}>
+            {pr.promptTokens !== undefined ? (
+              <div className="flex flex-col items-end leading-none gap-0.5">
+                <span className="text-muted-foreground/50">{fmtNum(pr.promptTokens + (pr.completionTokens || 0))}</span>
+                <span className="text-[7px] font-bold tracking-tighter opacity-60">
+                  <span className="text-blue-400">{fmtNum(pr.promptTokens)}i</span>
+                  <span className="mx-0.5 opacity-20">/</span>
+                  <span className="text-violet-400">{fmtNum(pr.completionTokens)}o</span>
+                </span>
+              </div>
+            ) : "—"}
           </td>
           <td className={`${tdCls} py-1.5 text-right`}>—</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmtKb(pr.requestPayloadKb)}</td>
@@ -184,30 +167,27 @@ function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkRe
 }
 
 // ── Results Display (with Zoom capability) ──────────────────────────────────
-function ResultsDisplay({ results, isRunning, bestId, cheapestId }: { 
-  results: BenchmarkResult[]; 
-  isRunning: boolean; 
-  bestId: string | null; 
+function ResultsDisplay({ results, isRunning, bestId, cheapestId }: {
+  results: BenchmarkResult[];
+  isRunning: boolean;
+  bestId: string | null;
   cheapestId: string | null;
 }) {
   const [isZoomed, setIsZoomed] = useState(false);
 
   const TableHeader = ({ isCompact }: { isCompact: boolean }) => (
-    <thead className={`${isCompact ? "text-[10px]" : "text-xs"} border-b border-white/5 bg-white/5 text-muted-foreground/40 font-bold uppercase tracking-tight`}>
+    <thead className={`${isCompact ? "text-[10px]" : "text-xs"} border-b border-white/5 bg-white/5 text-muted-foreground/70 font-bold uppercase tracking-tight`}>
       <tr>
-        <th className={`text-left px-2 py-2 ${isCompact ? "w-[14%]" : ""}`}>Scenario</th>
-        <th className={`text-left px-2 py-2 ${isCompact ? "w-[10%]" : ""}`}>Model</th>
-        <th className={`text-left px-2 py-2 ${isCompact ? "w-[12%]" : ""}`}>Status</th>
-        <th className={`text-center px-2 py-2 ${isCompact ? "w-[5%]" : ""}`}>Pages</th>
-        <th className={`text-right px-2 py-2 ${isCompact ? "w-[7%]" : ""}`}>Time</th>
-        <th className={`text-right px-2 py-2 ${isCompact ? "w-[6%]" : ""}`}>TTFT</th>
-        <th className={`text-right px-2 py-2 ${isCompact ? "w-[5%]" : ""} text-amber-400/80`}>TPS</th>
-        <th className={`text-right px-2 py-2 ${isCompact ? "w-[7%]" : ""}`}>Upload</th>
-        <th className={`text-right px-2 py-2 ${isCompact ? "w-[7%]" : ""}`}>Tokens</th>
-        <th className={`text-right px-2 py-2 ${isCompact ? "w-[6%]" : ""}`}>Avg/P</th>
-        <th className={`text-right px-2 py-2 ${isCompact ? "w-[7%]" : ""}`}>Payload</th>
-        <th className={`text-right px-2 py-2 ${isCompact ? "w-[6%]" : ""}`}>{isCompact ? "Eff." : "Efficiency"}</th>
-        <th className={`text-right px-2 py-2 ${isCompact ? "w-[8%]" : ""} text-emerald-400/80`}>Cost</th>
+        <th className={`text-left px-2 py-2 ${isCompact ? "w-[20%]" : ""}`}>Scenario</th>
+        <th className={`text-center px-2 py-2 ${isCompact ? "w-[6%]" : ""}`}>Pgs</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[9%]" : ""}`}>Time</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[9%]" : ""}`}>σ TTFT</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[8%]" : ""} text-amber-400/80`}>TPS</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[9%]" : ""}`}>Upload</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[10%]" : ""}`}>Tokens</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[10%]" : ""}`}>Payload</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[8%]" : ""}`}>{isCompact ? "Eff." : "Efficiency"}</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[11%]" : ""} text-emerald-400/80`}>Cost</th>
       </tr>
     </thead>
   );
@@ -218,10 +198,10 @@ function ResultsDisplay({ results, isRunning, bestId, cheapestId }: {
         <TableHeader isCompact={isCompact} />
         <tbody className="divide-y divide-white/3">
           {results.map(r => (
-            <ResultRow 
-              key={r.scenarioId} 
-              r={r} 
-              isBest={r.scenarioId === bestId} 
+            <ResultRow
+              key={r.scenarioId}
+              r={r}
+              isBest={r.scenarioId === bestId}
               isCheapest={r.scenarioId === cheapestId && cheapestId !== bestId}
               isCompact={isCompact}
             />
@@ -231,10 +211,11 @@ function ResultsDisplay({ results, isRunning, bestId, cheapestId }: {
     </div>
   );
 
+  const uniqueModels = Array.from(new Set(results.map(r => r.modelUsed).filter(Boolean)));
+  const modelText = uniqueModels.length > 0 ? `[ ${uniqueModels.join(", ")} ]` : "";
+
   const Footer = () => (
-    <div className="px-5 py-3 border-t border-white/5 bg-black/20 flex flex-wrap items-center gap-6 text-[9px] text-muted-foreground/30 uppercase tracking-widest">
-      <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Fastest</span>
-      <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Cheapest</span>
+    <div className="px-5 py-3 border-t border-white/5 bg-black/20 flex flex-wrap items-center gap-6 text-[9px] text-muted-foreground/50 uppercase tracking-widest">
       <span className="ml-auto font-mono opacity-50"># system_ready_for_export</span>
     </div>
   );
@@ -243,23 +224,24 @@ function ResultsDisplay({ results, isRunning, bestId, cheapestId }: {
     <>
       {/* Compact View */}
       <div className="bg-[#0c0c0c] border border-white/10 rounded-none overflow-hidden shadow-2xl group relative">
-        <div className="px-5 py-3 border-b border-white/5 bg-black/40 flex items-center gap-2">
-          <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Execution Results</h3>
+        <div className="px-5 py-3 border-b border-white/5 bg-black/40 flex items-center gap-3">
+          <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">Execution Results</h3>
+          {modelText && <span className="text-[9px] text-muted-foreground/40 font-mono italic opacity-60">{modelText}</span>}
           {isRunning && (
             <span className="ml-auto inline-flex items-center gap-1.5 text-[9px] text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 animate-pulse">
               $ monitoring_active...
             </span>
           )}
           {!isRunning && (
-            <button 
+            <button
               onClick={() => setIsZoomed(true)}
-              className="ml-auto p-1.5 text-muted-foreground/40 hover:text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-2 text-[9px] uppercase tracking-wider font-bold"
+              className="ml-auto p-1.5 text-muted-foreground/70 hover:text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-2 text-[9px] uppercase tracking-wider font-bold"
             >
               <Maximize2 size={12} /> Expand View
             </button>
           )}
         </div>
-        
+
         <div className="cursor-zoom-in" onClick={() => !isRunning && setIsZoomed(true)}>
           <TableContent isCompact={true} />
         </div>
@@ -270,45 +252,53 @@ function ResultsDisplay({ results, isRunning, bestId, cheapestId }: {
       {isZoomed && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 sm:p-10 bg-black/95 backdrop-blur-md animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.08),transparent_70%)] pointer-events-none" />
-          
+
           <div className="w-full max-w-7xl max-h-[90vh] bg-[#080808] border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col relative overflow-hidden animate-in zoom-in-95 duration-300">
             {/* Modal Header */}
             <div className="px-8 py-5 border-b border-white/10 bg-black/60 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-[0.3em] text-primary mb-1">Benchmark Analysis</h3>
-                <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-mono">Multimodal Input Efficiency Report</p>
+              <div className="flex items-center gap-4">
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-[0.3em] text-primary mb-1">Benchmark Analysis</h3>
+                  <p className="text-[10px] text-muted-foreground/80 uppercase tracking-widest font-mono">Multimodal Input Efficiency Report</p>
+                </div>
+                {modelText && (
+                  <div className="h-8 w-px bg-white/10 mx-2" />
+                )}
+                {modelText && (
+                  <span className="text-[10px] text-muted-foreground/40 font-mono bg-white/5 px-3 py-1 rounded border border-white/5">
+                    {modelText}
+                  </span>
+                )}
               </div>
-              <button 
+              <button
                 onClick={() => setIsZoomed(false)}
-                className="p-2 text-muted-foreground/40 hover:text-white hover:bg-white/5 rounded-full transition-all"
+                className="p-2 text-muted-foreground/70 hover:text-white hover:bg-white/5 rounded-full transition-all"
               >
                 <X size={20} />
               </button>
             </div>
 
             {/* Scrollable Modal Content */}
-            <div className="flex-1 overflow-auto p-8 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
+            <div className="flex-1 overflow-auto p-8 bg-[#080808]">
               <div className="bg-black/40 border border-white/5 shadow-2xl">
                 <TableContent isCompact={false} />
-                <div className="px-8 py-4 border-t border-white/5 bg-black/40 flex items-center gap-8 text-[10px] text-muted-foreground/40 uppercase tracking-[0.2em]">
-                  <span className="flex items-center gap-2 font-bold"><div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" /> Optimal Latency</span>
-                  <span className="flex items-center gap-2 font-bold"><div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" /> Economic Best</span>
+                <div className="px-8 py-4 border-t border-white/5 bg-black/40 flex items-center gap-8 text-[10px] text-muted-foreground/70 uppercase tracking-[0.2em]">
                   <div className="ml-auto flex items-center gap-4 opacity-50 font-mono">
                     <span>GEN_ID: {Math.random().toString(36).substring(7).toUpperCase()}</span>
                     <span>TIMESTAMP: {new Date().toLocaleTimeString()}</span>
                   </div>
                 </div>
               </div>
-              
+
               {/* Export Hint */}
               <div className="mt-6 flex justify-center">
-                <p className="text-[10px] text-muted-foreground/30 font-mono italic">
+                <p className="text-[10px] text-muted-foreground/50 font-mono italic">
                   Press Alt+PrtScn or use a screen capture tool to share this high-resolution report.
                 </p>
               </div>
             </div>
           </div>
-          
+
           {/* Overlay Click to Close */}
           <div className="absolute inset-0 -z-10" onClick={() => setIsZoomed(false)} />
         </div>
@@ -410,8 +400,8 @@ export function Benchmark() {
             <label className={labelCls}>PDF Document</label>
             <div
               className={`border-2 border-dashed rounded-xl transition-all duration-200 cursor-pointer ${dragOver ? "border-primary bg-primary/5 scale-[1.01]"
-                  : pdfFile ? "border-border bg-secondary/20"
-                    : "border-border hover:border-primary/40 hover:bg-secondary/20"
+                : pdfFile ? "border-border bg-secondary/20"
+                  : "border-border hover:border-primary/40 hover:bg-secondary/20"
                 }`}
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
@@ -480,8 +470,8 @@ export function Benchmark() {
 
                 return (
                   <label key={s.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all cursor-pointer ${!valid ? "opacity-50 cursor-not-allowed border-border bg-secondary/10"
-                      : isEnabled ? "border-primary/40 bg-primary/5"
-                        : "border-border hover:border-primary/30 hover:bg-secondary/30"
+                    : isEnabled ? "border-primary/40 bg-primary/5"
+                      : "border-border hover:border-primary/30 hover:bg-secondary/30"
                     }`}>
                     <input type="checkbox" checked={isEnabled} disabled={!valid}
                       onChange={e => toggleId(s.id, e.target.checked)}
