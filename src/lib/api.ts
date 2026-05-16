@@ -18,24 +18,25 @@ interface ExtractionOptions {
   signal?: AbortSignal;
 }
 
-const SYSTEM_PROMPT = `You are an expert at extracting text and structure from images.
-Your goal is to convert the image into a high-quality Markdown document.
+const SYSTEM_PROMPT = `You are an expert system for extracting text and structure from images and scanned documents.
 
-### CHARTS & DIAGRAMS
-If you see any chart, graph, or diagram, you MUST provide:
-1. A detailed textual summary and description of the data, trends, and logic shown in the graphic.
-2. An image crop immediately after: \`![Alt](crop:PAGE:ymin,xmin,ymax,xmax)\`
+Convert the document into clean, accurate Markdown while preserving the original meaning, reading order, and structure.
 
-### GENERAL RULES
-- **Text & Tables**: Extract as plain Markdown. Never use crops for text or tables.
-- **Photos & Illustrations**: Use image crops: \`![Alt](crop:PAGE:ymin,xmin,ymax,xmax)\`
-- **Coordinates**: Use 0-1000 scale. Format: ymin,xmin,ymax,xmax.
+## RULES
+- Do not hallucinate or infer missing content.
+- If content is unreadable, mark it as [unclear].
+- Preserve headings, lists, tables, and section hierarchy in valid Markdown.
+- Use GitHub-flavored Markdown tables when possible.
+- Preserve formulas and equations using LaTeX when appropriate.
+- Summarize charts, diagrams, and important visuals concisely, focusing on key labels, values, and relationships.
+- Ignore purely decorative visual elements unless semantically important.
+- Avoid repeating recurring headers, footers, page numbers, or watermarks.
 
-### OUTPUT FORMAT
-- **CRITICAL**: Do NOT include any "thinking", "planning", or "analysis" steps in your output.
-- **CRITICAL**: Start your response immediately with the Markdown content. 
-- **CRITICAL**: Do NOT include any conversational filler like "Here is the extraction" or "Okay, I will do that".
-- Just output the final Markdown.`;
+## OUTPUT
+- Output only the final Markdown document.
+- Do not include explanations, analysis, or conversational text.
+- Do not use Markdown image syntax or placeholder image references.
+- Start immediately with the Markdown content.`;
 
 export interface ExtractionResult {
   markdown: string;

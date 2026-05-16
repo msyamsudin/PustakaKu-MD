@@ -143,30 +143,6 @@ class RenderQueue {
 
 export const thumbnailRenderQueue = new RenderQueue(6);
 
-/**
- * Post-processes AI markdown output by normalizing image coordinate placeholders
- * into a standard reference format: ![alt](crop:PAGE_NUM:ymin,xmin,ymax,xmax)
- * This avoids embedding large base64 strings in the markdown content.
- */
-export async function postProcessImageCrops(markdown: string, pageNum: number): Promise<string> {
-  const imageRegex = /!\[([^\]]*)\]\((?!data:)(?!https?:\/\/)([^)]+)\)/g;
-  const matches = [...markdown.matchAll(imageRegex)];
-  if (matches.length === 0) return markdown;
-
-  let processed = markdown;
-  for (const match of matches) {
-    const [fullMatch, alt, url] = match;
-    const numbers = url.match(/\d+(?:\.\d+)?/g);
-    
-    if (numbers && numbers.length >= 4) {
-      const [ymin, xmin, ymax, xmax] = numbers;
-      // Convert to normalized format ![alt](crop:PAGE:ymin,xmin,ymax,xmax)
-      const placeholder = `crop:${pageNum}:${ymin},${xmin},${ymax},${xmax}`;
-      processed = processed.replace(fullMatch, `![${alt}](${placeholder})`);
-    }
-  }
-  return processed;
-}
 
 export async function getPdfPageCount(data: File | PdfDocument | Uint8Array | ArrayBuffer): Promise<number> {
   if (typeof data === 'object' && data !== null && 'numPages' in data) {

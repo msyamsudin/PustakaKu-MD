@@ -238,7 +238,6 @@ export function Extractor() {
           currentPdfPage={currentPdfPage}
           pdfPageCount={pdfPageCount}
           isPdf={isPdf}
-          pageCache={pageCache}
           isExtracting={isPageExtracting}
           isStreaming={isStreaming}
           showMarkdownGrid={showMarkdownGrid}

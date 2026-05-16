@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { extractMarkdown, Provider, ExtractionResult } from "../lib/api";
 import { logger } from "../lib/logger";
-import { blobToBase64, postProcessImageCrops, renderPageFromDoc } from "../lib/pdfUtils";
+import { blobToBase64, renderPageFromDoc } from "../lib/pdfUtils";
 import { cacheDB, STORES } from "../lib/cache";
 import { updateStats } from "../lib/utils/stats";
 import {
@@ -171,19 +171,14 @@ export function useExtraction(deps: ExtractionDeps) {
         const duration = (performance.now() - startTime) / 1000;
         setExtractDuration(duration);
 
-        const processedMarkdown = await postProcessImageCrops(
-          result.markdown,
-          deps.currentPdfPage
-        );
-
-        deps.setMarkdown(processedMarkdown);
+        deps.setMarkdown(result.markdown);
         deps.setMarkdownCache((prev) => {
-          const next = { ...prev, [deps.currentPdfPage]: processedMarkdown };
+          const next = { ...prev, [deps.currentPdfPage]: result.markdown };
           if (deps.file) {
             cacheDB.set(
               STORES.EXTRACTIONS,
               { path: deps.file.path, pageNum: deps.currentPdfPage },
-              processedMarkdown
+              result.markdown
             );
           }
           return next;
@@ -357,22 +352,20 @@ export function useExtraction(deps: ExtractionDeps) {
           });
 
           const duration = (performance.now() - startTime) / 1000;
-          const processedMarkdown = await postProcessImageCrops(result.markdown, pageNum);
-
           deps.setMarkdownCache((prev) => {
-            const next = { ...prev, [pageNum]: processedMarkdown };
+            const next = { ...prev, [pageNum]: result.markdown };
             if (deps.file)
               cacheDB.set(
                 STORES.EXTRACTIONS,
                 { path: deps.file.path, pageNum },
-                processedMarkdown
+                result.markdown
               );
             return next;
           });
           updateStats(result, deps.file?.path || "", deps.file?.name || "unknown", duration);
 
           if (!isParallel) {
-            deps.setMarkdown(processedMarkdown);
+            deps.setMarkdown(result.markdown);
             setUsage(result.usage);
             setCost(result.cost ?? null);
             setExtractDuration(duration);

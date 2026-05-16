@@ -2,7 +2,6 @@ import { FileText, Trash2, LayoutGrid, X, Copy } from "lucide-react";
 import { MarkdownThumbnail } from "./MarkdownThumbnail";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { AsciiVisionLoader } from "../AsciiVisionLoader";
-import type { PageCache } from "../../lib/utils/types";
 
 interface Props {
   markdown: string;
@@ -10,7 +9,6 @@ interface Props {
   currentPdfPage: number;
   pdfPageCount: number;
   isPdf: boolean;
-  pageCache: PageCache;
   isExtracting: boolean;
   isStreaming: boolean;
   showMarkdownGrid: boolean;
@@ -28,7 +26,7 @@ interface Props {
 
 export function ResultPane({
   markdown, markdownCache, currentPdfPage, pdfPageCount, isPdf,
-  pageCache, isExtracting, isStreaming, showMarkdownGrid,
+  isExtracting, isStreaming, showMarkdownGrid,
   selectedMarkdownPages, onToggleGrid, onSelectMarkdownPage,
   onSelectAll, onSelectNone, onBatchCopy, onBatchDelete,
   onDeletePage, onPageClick, onClearMarkdown
@@ -179,7 +177,7 @@ export function ResultPane({
             )}
           </div>
         ) : (
-          <MarkdownRenderer markdown={markdown} pageCache={pageCache} />
+          <MarkdownRenderer markdown={markdown} />
         )}
       </div>
     </div>
