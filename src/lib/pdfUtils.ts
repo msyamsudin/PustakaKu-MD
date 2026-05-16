@@ -30,7 +30,7 @@ export async function loadPdfDocument(data: File | Uint8Array | ArrayBuffer): Pr
  * Renders a specific page from an already loaded PDF document.
  * Returns a Blob of the rendered image and its dimensions.
  */
-export function renderPageFromDoc(pdf: PdfDocument, pageNumber: number, scale: number = 1.5) {
+export function renderPageFromDoc(pdf: PdfDocument, pageNumber: number, scale: number = 2.0) {
   let renderTask: any = null;
   let cancelled = false;
 

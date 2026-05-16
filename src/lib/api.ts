@@ -20,23 +20,25 @@ interface ExtractionOptions {
 
 const SYSTEM_PROMPT = `You are an expert system for extracting text and structure from images and scanned documents.
 
-Convert the document into clean, accurate Markdown while preserving the original meaning, reading order, and structure.
+Convert the entire document into clean, accurate Markdown while preserving the original meaning, reading order, and structure.
 
 ## RULES
+- Extract ALL text and structure from the entire image. Do not stop until you have processed every word and element from the top-most edge to the bottom-most edge of the image.
 - Do not hallucinate or infer missing content.
 - If content is unreadable, mark it as [unclear].
 - Preserve headings, lists, tables, and section hierarchy in valid Markdown.
 - Use GitHub-flavored Markdown tables when possible.
 - Preserve formulas and equations using LaTeX when appropriate.
-- Summarize charts, diagrams, and important visuals concisely, focusing on key labels, values, and relationships.
+- For charts, diagrams, and visuals, provide a clear text-based description only. NEVER use image tags, HTML <img>, or Markdown ![]() syntax.
 - Ignore purely decorative visual elements unless semantically important.
-- Avoid repeating recurring headers, footers, page numbers, or watermarks.
+- Remove page numbers and recurring document headers/footers ONLY if they are purely decorative and do not contain unique content. If in doubt, include them.
 
 ## OUTPUT
 - Output only the final Markdown document.
 - Do not include explanations, analysis, or conversational text.
-- Do not use Markdown image syntax or placeholder image references.
-- Start immediately with the Markdown content.`;
+- ABSOLUTELY FORBIDDEN: Do not use Markdown image syntax (![]()), placeholder image URLs, or any external links to graphics.
+- Start immediately with the Markdown content.
+- Ensure the extraction is complete and covers the full page.`;
 
 export interface ExtractionResult {
   markdown: string;
@@ -166,7 +168,11 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
           model: model || "llava:latest",
           prompt: SYSTEM_PROMPT,
           images: [base64Data],
-          stream: true // Enable streaming
+          stream: true, // Enable streaming
+          options: {
+            num_predict: 4096,
+            temperature: 0
+          }
         }),
         signal: options.signal
       });
@@ -242,6 +248,8 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
           model: model || "google/gemini-pro-vision",
           stream: true,
           stream_options: { include_usage: true },
+          max_tokens: 8192,
+          temperature: 0,
           messages: [
             {
               role: "system",
@@ -419,7 +427,12 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
             parts: [
               imagePart
             ]
-          }]
+          }],
+          generationConfig: {
+            maxOutputTokens: 8192,
+            temperature: 0,
+            topP: 0.95,
+          }
         }),
         signal: options.signal
       });
@@ -532,8 +545,8 @@ export async function fetchModels(provider: Provider, config: { openRouterKey?: 
       contextLength: m.context_length,
       capabilities: {
         // OpenRouter provides explicit modality information
-        vision: m.architecture?.modality === "multimodal" || 
-                m.architecture?.modality?.includes("image")
+        vision: m.architecture?.modality === "multimodal" ||
+          m.architecture?.modality?.includes("image")
       }
     }));
   }
@@ -541,7 +554,7 @@ export async function fetchModels(provider: Provider, config: { openRouterKey?: 
   if (provider === "google") {
     const key = config.googleApiKey?.trim();
     if (!key) throw new Error("Google API Key is required");
-    
+
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
