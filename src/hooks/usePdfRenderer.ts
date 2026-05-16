@@ -26,10 +26,25 @@ export function usePdfRenderer(file: AppFile | null, isPdf: boolean) {
     if (!pdfDoc || !isPdf) return;
 
     const render = async () => {
-      // Check cache first
+      // Check memory cache first
       if (pageCache[currentPdfPage]) {
         setPreviewUrl(pageCache[currentPdfPage]);
         return;
+      }
+
+      // Check persistent cache (IndexedDB)
+      if (file) {
+        try {
+          const cachedBlob = await cacheDB.get(STORES.PAGE_RENDERS, { path: file.path, pageNum: currentPdfPage });
+          if (cachedBlob instanceof Blob) {
+            const blobUrl = URL.createObjectURL(cachedBlob);
+            setPageCache(prev => ({ ...prev, [currentPdfPage]: blobUrl }));
+            setPreviewUrl(blobUrl);
+            return;
+          }
+        } catch (e) {
+          console.warn("Cache check failed", e);
+        }
       }
 
       // Cancel previous render if any
@@ -43,13 +58,13 @@ export function usePdfRenderer(file: AppFile | null, isPdf: boolean) {
         const renderTask = renderPageFromDoc(pdfDoc, currentPdfPage);
         renderRef.current = renderTask;
 
-        const blob = await renderTask.promise;
-        const blobUrl = URL.createObjectURL(blob);
+        const result = await renderTask.promise;
+        const blobUrl = URL.createObjectURL(result.blob);
 
         setPageCache((prev) => {
           const next = { ...prev, [currentPdfPage]: blobUrl };
           if (file) {
-            cacheDB.set(STORES.PAGE_RENDERS, { path: file.path, pageNum: currentPdfPage }, blob);
+            cacheDB.set(STORES.PAGE_RENDERS, { path: file.path, pageNum: currentPdfPage }, result.blob);
           }
           return next;
         });
@@ -61,7 +76,7 @@ export function usePdfRenderer(file: AppFile | null, isPdf: boolean) {
           console.error("Failed to render PDF page", e);
         }
       } finally {
-        setTimeout(() => setIsRenderingPage(false), 150);
+        setIsRenderingPage(false);
         renderRef.current = null;
       }
     };

@@ -16,7 +16,7 @@ export async function loadPdfDocument(data: File | Uint8Array | ArrayBuffer): Pr
     const loadingTask = pdfjsLib.getDocument({ 
       data: arrayBuffer,
       // Use standard fonts for better performance and compatibility
-      cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/cmaps/',
+      cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/cmaps/',
       cMapPacked: true,
     });
     return await loadingTask.promise;
@@ -30,7 +30,7 @@ export async function loadPdfDocument(data: File | Uint8Array | ArrayBuffer): Pr
  * Renders a specific page from an already loaded PDF document.
  * Returns a Blob of the rendered image and its dimensions.
  */
-export function renderPageFromDoc(pdf: PdfDocument, pageNumber: number, scale: number = 2.0) {
+export function renderPageFromDoc(pdf: PdfDocument, pageNumber: number, scale: number = 1.5) {
   let renderTask: any = null;
   let cancelled = false;
 

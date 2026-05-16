@@ -54,16 +54,12 @@ export function useFileManagement() {
       setErrorMsg(null);
 
       // Load persistent caches (convert stored Blobs to Blob URLs)
-      const [savedPagesRaw, savedThumbsRaw, savedExtractions] = await Promise.all([
-        cacheDB.getAllForFile(STORES.PAGE_RENDERS, path),
+      // Note: We don't load PAGE_RENDERS here to avoid massive memory usage.
+      // They are loaded on-demand in usePdfRenderer.
+      const [savedThumbsRaw, savedExtractions] = await Promise.all([
         cacheDB.getAllForFile(STORES.THUMBNAILS, path),
         cacheDB.getAllForFile(STORES.EXTRACTIONS, path),
       ]);
-
-      const savedPages: PageCache = {};
-      Object.entries(savedPagesRaw).forEach(([pageNum, val]) => {
-        if (val instanceof Blob) savedPages[Number(pageNum)] = URL.createObjectURL(val);
-      });
 
       const savedThumbs: PageCache = {};
       Object.entries(savedThumbsRaw).forEach(([pageNum, val]) => {
@@ -91,7 +87,7 @@ export function useFileManagement() {
         return {
           pdfDoc: doc,
           pageCount: doc.numPages,
-          savedPages,
+          savedPages: {}, // Will be populated on-demand
           savedThumbs,
           savedExtractions: savedExtractions as MarkdownCacheMap,
           validPage,

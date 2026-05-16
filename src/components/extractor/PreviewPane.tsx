@@ -126,10 +126,10 @@ export function PreviewPane({
                   isSelected={selectedPages.has(pageNum)}
                   onSelect={() => onTogglePageSelection(pageNum)}
                   thumbUrl={thumbCache[pageNum]}
-                  onRenderComplete={(pNum, blob) => {
-                    const url = URL.createObjectURL(blob);
+                  onRenderComplete={(pNum, result: any) => {
+                    const url = URL.createObjectURL(result.blob);
                     setThumbCache(prev => ({ ...prev, [pNum]: url }));
-                    if (file?.path) cacheDB.set(STORES.THUMBNAILS, { path: file.path, pageNum: pNum }, blob);
+                    if (file?.path) cacheDB.set(STORES.THUMBNAILS, { path: file.path, pageNum: pNum }, result.blob);
                   }}
                   onClick={() => onPageClick(pageNum)}
                 />
