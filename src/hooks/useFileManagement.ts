@@ -130,6 +130,7 @@ export function useFileManagement() {
     isPdf,
     setIsPdf,
     config,
+    setConfig,
     errorMsg,
     setErrorMsg,
     isInitialLoad,

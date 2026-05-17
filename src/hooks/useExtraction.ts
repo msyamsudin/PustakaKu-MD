@@ -1,7 +1,8 @@
 import { useState, useRef } from "react";
-import { extractMarkdown, Provider, ExtractionResult } from "../lib/api";
+import { extractMarkdown, extractMarkdownWithSlicing, Provider, ExtractionResult } from "../lib/api";
 import { logger } from "../lib/logger";
-import { blobToBase64, renderPageFromDoc } from "../lib/pdfUtils";
+import { blobToBase64, renderPageFromDoc, slicePageImage } from "../lib/pdfUtils";
+import { analyzePageLayout } from "../lib/columnDetector";
 import { cacheDB, STORES } from "../lib/cache";
 import { updateStats } from "../lib/utils/stats";
 import {
@@ -33,6 +34,12 @@ export interface ExtractionDeps {
   setErrorMsg: (msg: string | null) => void;
 }
 
+export type ExtractionMethodInfo = {
+  type: "single" | "slicing";
+  columnCount?: number;
+  sliceCount?: number;
+} | null;
+
 export function useExtraction(deps: ExtractionDeps) {
   const [isExtracting, setIsExtracting] = useState(false);
   const [isPageExtracting, setIsPageExtracting] = useState(false);
@@ -40,6 +47,7 @@ export function useExtraction(deps: ExtractionDeps) {
   const [usage, setUsage] = useState<ExtractionResult["usage"] | null>(null);
   const [cost, setCost] = useState<number | null>(null);
   const [extractDuration, setExtractDuration] = useState<number | null>(null);
+  const [lastExtractionMethod, setLastExtractionMethod] = useState<ExtractionMethodInfo>(null);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<BatchProgress>({
     current: 0,
@@ -151,21 +159,49 @@ export function useExtraction(deps: ExtractionDeps) {
 
         const base64 = useSupabase ? "" : await blobToBase64(blob);
 
-        const result = await extractMarkdown({
+        const extractionOptions = {
           provider: config.provider as Provider,
           openRouterKey: config.openRouterKey,
           ollamaUrl: config.ollamaUrl,
           googleApiKey: config.googleApiKey,
           model: modelToUse,
           base64Image: base64,
-          imageInputMode: useSupabase ? "supabase" : (config.imageInputMode === "google_files" ? "google_files" : "base64"),
+          imageInputMode: (useSupabase ? "supabase" : (config.imageInputMode === "google_files" ? "google_files" : "base64")) as any,
           imageUrl: extractionImageUrl,
-          onChunk: (chunk) => {
+          onChunk: (chunk: string) => {
             deps.setMarkdown((prev) => (typeof prev === "string" ? prev + chunk : chunk));
             updateStreamingActivity(true);
           },
           signal: abortControllerRef.current.signal,
-        });
+        };
+
+        let result: ExtractionResult;
+
+        if (config.enableColumnDetection !== false) {
+          logger.info(`Analyzing layout for page ${deps.currentPdfPage}...`);
+          const layout = await analyzePageLayout(await deps.pdfDoc.getPage(deps.currentPdfPage));
+          
+          if (layout.isMultiColumn) {
+            logger.info(`Multi-column layout detected (${layout.columnCount} columns). Slicing...`);
+            const { slices, labels } = await slicePageImage(blob, layout.regions);
+            
+            result = await extractMarkdownWithSlicing({
+              ...extractionOptions,
+              slices,
+              labels,
+              onSliceStart: (label, index) => {
+                logger.info(`Extracting segment ${index + 1}/${slices.length}: ${label}`);
+              }
+            });
+            setLastExtractionMethod({ type: "slicing", columnCount: layout.columnCount, sliceCount: slices.length });
+          } else {
+            result = await extractMarkdown(extractionOptions);
+            setLastExtractionMethod({ type: "single" });
+          }
+        } else {
+          result = await extractMarkdown(extractionOptions);
+          setLastExtractionMethod({ type: "single" });
+        }
 
         updateStreamingActivity(false);
         const duration = (performance.now() - startTime) / 1000;
@@ -333,23 +369,52 @@ export function useExtraction(deps: ExtractionDeps) {
 
           const base64 = useSupabase ? "" : await blobToBase64(currentBlob);
 
-          const result = await extractMarkdown({
+          const extractionOptions = {
             provider: config.provider as Provider,
             openRouterKey: config.openRouterKey,
             ollamaUrl: config.ollamaUrl,
             googleApiKey: config.googleApiKey,
             model: modelToUse,
             base64Image: base64,
-            imageInputMode: useSupabase ? "supabase" : (config.imageInputMode === "google_files" ? "google_files" : "base64"),
+            imageInputMode: (useSupabase ? "supabase" : (config.imageInputMode === "google_files" ? "google_files" : "base64")) as any,
             imageUrl: extractionImageUrl,
-            onChunk: (chunk) => {
+            onChunk: (chunk: string) => {
               if (!isParallel) {
                 deps.setMarkdown((prev) => (typeof prev === "string" ? prev + chunk : chunk));
                 updateStreamingActivity(true);
               }
             },
             signal: abortControllerRef.current?.signal,
-          });
+          };
+
+          let result: ExtractionResult;
+
+          if (config.enableColumnDetection !== false) {
+            const layout = await analyzePageLayout(await deps.pdfDoc.getPage(pageNum));
+            if (layout.isMultiColumn) {
+              const { slices, labels } = await slicePageImage(currentBlob, layout.regions);
+              result = await extractMarkdownWithSlicing({
+                ...extractionOptions,
+                slices,
+                labels,
+                onSliceStart: (label) => {
+                  if (!isParallel) {
+                    setBatchProgress(prev => ({
+                      ...prev,
+                      status: `Page ${index + 1} — Extracting ${label}...`
+                    }));
+                  }
+                }
+              });
+              setLastExtractionMethod({ type: "slicing", columnCount: layout.columnCount, sliceCount: slices.length });
+            } else {
+              result = await extractMarkdown(extractionOptions);
+              setLastExtractionMethod({ type: "single" });
+            }
+          } else {
+            result = await extractMarkdown(extractionOptions);
+            setLastExtractionMethod({ type: "single" });
+          }
 
           const duration = (performance.now() - startTime) / 1000;
           deps.setMarkdownCache((prev) => {
@@ -470,6 +535,8 @@ export function useExtraction(deps: ExtractionDeps) {
     setCost,
     extractDuration,
     setExtractDuration,
+    lastExtractionMethod,
+    setLastExtractionMethod,
     isBatchProcessing,
     batchProgress,
     selectedPages,

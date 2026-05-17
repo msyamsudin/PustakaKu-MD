@@ -130,8 +130,8 @@ export async function exportWithAssets(
             `[Export] Page ${pageNum} missing from cache, rendering on-demand...`
           );
           try {
-            const renderTask = renderPageFromDoc(ctx.pdfDoc, pageNum);
-            blob = await renderTask.promise;
+            const result = await renderPageFromDoc(ctx.pdfDoc, pageNum).promise;
+            blob = result.blob;
             if (ctx.file) {
               cacheDB.set(
                 STORES.PAGE_RENDERS,

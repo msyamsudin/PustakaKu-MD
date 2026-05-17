@@ -16,6 +16,7 @@ interface ExtractionOptions {
   mimeType?: string;                       // Optional hint for mimeType
   onChunk?: (text: string) => void;
   signal?: AbortSignal;
+  systemPromptOverride?: string; // For layout-aware slicing
 }
 
 const SYSTEM_PROMPT = `You are an expert system for extracting text and structure from images and scanned documents.
@@ -24,7 +25,9 @@ Convert the entire document into clean, accurate Markdown while preserving the o
 
 ## RULES
 - Extract ALL text and structure from the entire image. Do not stop until you have processed every word and element from the top-most edge to the bottom-most edge of the image.
+- **Reading Order**: Extract content in the natural, logical reading order as a human would. For complex layouts or multi-column documents (like academic papers), maintain the flow of ideas and sections correctly. Ensure that sentences or paragraphs split across layout elements are reassembled logically into a continuous flow.
 - Do not hallucinate or infer missing content.
+- **No Hallucinated Links**: NEVER generate or invent URLs, external links, or placeholders for images, figures, or tables (e.g., do not use [Figure 1](https://...) or similar). Only include actual hyperlinks if they are explicitly written as text in the source document.
 - If content is unreadable, mark it as [unclear].
 - Preserve headings, lists, tables, and section hierarchy in valid Markdown.
 - Use GitHub-flavored Markdown tables when possible.
@@ -32,13 +35,34 @@ Convert the entire document into clean, accurate Markdown while preserving the o
 - For charts, diagrams, and visuals, provide a clear text-based description only. NEVER use image tags, HTML <img>, or Markdown ![]() syntax.
 - Ignore purely decorative visual elements unless semantically important.
 - Remove page numbers and recurring document headers/footers ONLY if they are purely decorative and do not contain unique content. If in doubt, include them.
+- **Completeness**: You are responsible for a full-page extraction. Ensure the output ends naturally at the bottom of the page content, not prematurely.
 
-## OUTPUT
-- Output only the final Markdown document.
-- Do not include explanations, analysis, or conversational text.
-- ABSOLUTELY FORBIDDEN: Do not use Markdown image syntax (![]()), placeholder image URLs, or any external links to graphics.
+## OUTPUT CONSTRAINTS (STRICT)
+- **ONLY output the final Markdown document.**
+- **ABSOLUTELY NO meta-commentary, planning, analysis, self-correction, or conversational text.**
+- **DO NOT explain your process (e.g., do not say "I will identify the structure..." or "Step 1: ...").**
+- **DO NOT include any introductory or concluding remarks.**
+- **ABSOLUTELY FORBIDDEN**: Do not use Markdown image syntax (![]()), placeholder image URLs, or ANY external links to graphics or figures (e.g., [Text](http://...)). All descriptions of visual elements must be plain text.
 - Start immediately with the Markdown content.
 - Ensure the extraction is complete and covers the full page.`;
+
+export const SLICE_SYSTEM_PROMPT = `You are an expert system for extracting text and structure from a SEGMENT of a larger document page.
+
+Convert this segment into clean, accurate Markdown. 
+This segment may start or end mid-paragraph or mid-sentence. Extract ALL text exactly as shown.
+
+## RULES
+- Extract ALL text from this segment.
+- Maintain formatting (headings, lists, tables).
+- **NO HEADER/FOOTER REMOVAL**: Do not remove any text that looks like a page number or header, as it is part of this specific segment.
+- **No Hallucinated Links**: NEVER generate or invent URLs.
+- For formulas, use LaTeX.
+
+## OUTPUT CONSTRAINTS (STRICT)
+- **ONLY output the Markdown.**
+- **NO meta-commentary or conversational text.**
+- **ABSOLUTELY FORBIDDEN**: Do not use Markdown image syntax (![]()) or placeholder URLs.
+- Start immediately with the content.`;
 
 export interface ExtractionResult {
   markdown: string;
@@ -161,12 +185,14 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
 
     if (provider === "ollama") {
       const url = options.ollamaUrl?.replace(/\/$/, '') || "http://localhost:11434";
+      const prompt = options.systemPromptOverride || SYSTEM_PROMPT;
+
       const response = await fetch(`${url}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: model || "llava:latest",
-          prompt: SYSTEM_PROMPT,
+          prompt: prompt,
           images: [base64Data],
           stream: true, // Enable streaming
           options: {
@@ -253,7 +279,7 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
           messages: [
             {
               role: "system",
-              content: SYSTEM_PROMPT
+              content: options.systemPromptOverride || SYSTEM_PROMPT
             },
             {
               role: "user",
@@ -420,7 +446,7 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
         },
         body: JSON.stringify({
           system_instruction: {
-            parts: [{ text: SYSTEM_PROMPT }]
+            parts: [{ text: options.systemPromptOverride || SYSTEM_PROMPT }]
           },
           contents: [{
             role: "user",
@@ -510,6 +536,56 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
   });
 }
 
+/**
+ * Orchestrates multi-segment extraction for a single page.
+ */
+export async function extractMarkdownWithSlicing(
+  options: ExtractionOptions & {
+    slices: Blob[];
+    labels: string[];
+    onSliceStart?: (label: string, index: number) => void;
+  }
+): Promise<ExtractionResult> {
+  const { slices, labels, onSliceStart, ...baseOptions } = options;
+  let fullMarkdown = "";
+  let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  let totalCost = 0;
+
+  for (let i = 0; i < slices.length; i++) {
+    if (onSliceStart) onSliceStart(labels[i], i);
+    
+    const sliceBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve((reader.result as string).split('base64,')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(slices[i]);
+    });
+
+    const result = await extractMarkdown({
+      ...baseOptions,
+      base64Image: sliceBase64,
+      systemPromptOverride: SLICE_SYSTEM_PROMPT,
+      onChunk: (chunk) => {
+        if (options.onChunk) options.onChunk(chunk);
+      }
+    });
+
+    fullMarkdown += (fullMarkdown ? "\n\n" : "") + result.markdown;
+    if (result.usage) {
+      totalUsage.prompt_tokens += result.usage.prompt_tokens;
+      totalUsage.completion_tokens += result.usage.completion_tokens;
+      totalUsage.total_tokens += result.usage.total_tokens;
+    }
+    totalCost += result.cost || 0;
+  }
+
+  return {
+    markdown: fullMarkdown,
+    usage: totalUsage,
+    cost: totalCost
+  };
+}
+
 export async function fetchModels(provider: Provider, config: { openRouterKey?: string; anthropicApiKey?: string; ollamaUrl?: string; googleApiKey?: string }): Promise<ModelInfo[]> {
   if (provider === "ollama") {
     const url = config.ollamaUrl?.replace(/\/$/, '') || "http://localhost:11434";
@@ -522,7 +598,6 @@ export async function fetchModels(provider: Provider, config: { openRouterKey?: 
       id: m.name,
       name: m.name,
       capabilities: {
-        // Ollama officially marks vision models with 'clip' in the families field
         vision: m.details?.families?.includes("clip")
       }
     }));
@@ -544,7 +619,6 @@ export async function fetchModels(provider: Provider, config: { openRouterKey?: 
       description: m.description,
       contextLength: m.context_length,
       capabilities: {
-        // OpenRouter provides explicit modality information
         vision: m.architecture?.modality === "multimodal" ||
           m.architecture?.modality?.includes("image")
       }
@@ -571,7 +645,6 @@ export async function fetchModels(provider: Provider, config: { openRouterKey?: 
           description: m.description,
           contextLength: m.inputTokenLimit,
           capabilities: {
-            // Google v1beta API list doesn't provide an explicit vision flag
             vision: false
           }
         };
@@ -579,7 +652,6 @@ export async function fetchModels(provider: Provider, config: { openRouterKey?: 
   }
 
   if (provider === "anthropic") {
-    // Stub for now
     return [
       { id: "claude-3-opus-20240229", name: "Claude 3 Opus", capabilities: { vision: true } },
       { id: "claude-3-sonnet-20240229", name: "Claude 3 Sonnet", capabilities: { vision: true } },

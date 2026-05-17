@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback } from "react";
-import { extractMarkdown } from "../lib/api";
+import { extractMarkdown, extractMarkdownWithSlicing } from "../lib/api";
 import { logger } from "../lib/logger";
-import { renderPageFromDoc, loadPdfDocument, blobToBase64 } from "../lib/pdfUtils";
+import { renderPageFromDoc, loadPdfDocument, blobToBase64, slicePageImage } from "../lib/pdfUtils";
+import { analyzePageLayout } from "../lib/columnDetector";
 import {
   uploadToSupabase,
   getSignedUrl,
@@ -317,13 +318,7 @@ export function useBenchmark(): UseBenchmarkReturn {
               let firstChunk = false;
               const aiStart = performance.now();
 
-              patchResult(scenario.id, { currentTask: `Waiting for AI (pg. ${pageNum})...`, taskStartTime: performance.now() });
-              logger.info(`[Benchmark] ${scenario.label} - pg. ${pageNum} requesting AI...`, { 
-                mode: scenario.imageInputMode,
-                model: modelToUse
-              });
-
-              const result = await extractMarkdown({
+              const extractionOptions = {
                 provider: scenario.provider,
                 openRouterKey: cfg.openRouterKey,
                 googleApiKey: cfg.googleApiKey,
@@ -343,7 +338,28 @@ export function useBenchmark(): UseBenchmarkReturn {
                     logger.debug(`[Benchmark] ${scenario.label} - pg. ${pageNum} TTFT received: ${Math.round(pageResult.ttftMs!)}ms`);
                   }
                 },
-              });
+              };
+
+              let result;
+
+              if (cfg.enableColumnDetection !== false) {
+                const layout = await analyzePageLayout(await pdfDoc.getPage(pageNum));
+                if (layout.isMultiColumn) {
+                  const { slices, labels } = await slicePageImage(pageBlob, layout.regions);
+                  result = await extractMarkdownWithSlicing({
+                    ...extractionOptions,
+                    slices,
+                    labels,
+                    onSliceStart: (label) => {
+                      patchResult(scenario.id, { currentTask: `Extracting ${label} (pg. ${pageNum})...` });
+                    }
+                  });
+                } else {
+                  result = await extractMarkdown(extractionOptions);
+                }
+              } else {
+                result = await extractMarkdown(extractionOptions);
+              }
 
               pageResult.durationMs = performance.now() - uploadStart; // full page time
               pageResult.promptTokens = result.usage?.prompt_tokens;

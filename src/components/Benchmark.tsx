@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import {
   FlaskConical, Square, RotateCcw, Download, FileText,
   Zap, ChevronDown, ChevronRight, Loader2, AlertTriangle,
-  Cloud, HardDrive, ShieldCheck, ShieldX, Maximize2, X
+  Cloud, HardDrive, ShieldCheck, ShieldX, Maximize2, X, Columns2
 } from "lucide-react";
 import { useBenchmark, verifyScenario } from "../hooks/useBenchmark";
 import { getPdfPageCount } from "../lib/pdfUtils";
@@ -504,24 +504,50 @@ export function Benchmark() {
               </div>
             )}
 
-            {/* Execution mode */}
-            <div className="mt-6">
-              <label className={labelCls}>Execution Mode</label>
-              <div className="flex gap-4">
-                <label className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border transition-all cursor-pointer ${!isParallel ? "border-primary/40 bg-primary/5" : "border-border hover:bg-secondary/20"}`}>
-                  <input type="radio" checked={!isParallel} onChange={() => setIsParallel(false)} className="accent-primary" />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold">Sequential</span>
-                    <span className="text-[10px] text-muted-foreground">Page by page (Safe)</span>
+            {/* Execution mode & Slicing */}
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2 flex flex-col">
+                <label className={labelCls}>Execution Mode</label>
+                <div className="grid grid-cols-2 gap-4 flex-1">
+                  <label className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all cursor-pointer h-full w-full ${!isParallel ? "border-primary/40 bg-primary/5" : "border-border hover:bg-secondary/20"}`}>
+                    <input type="radio" checked={!isParallel} onChange={() => setIsParallel(false)} className="accent-primary shrink-0" />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold">Sequential</span>
+                      <span className="text-[10px] text-muted-foreground">Page by page</span>
+                    </div>
+                  </label>
+                  <label className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all cursor-pointer h-full w-full ${isParallel ? "border-primary/40 bg-primary/5" : "border-border hover:bg-secondary/20"}`}>
+                    <input type="radio" checked={isParallel} onChange={() => setIsParallel(true)} className="accent-primary shrink-0" />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold">Parallel</span>
+                      <span className="text-[10px] text-muted-foreground">Concurrent</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex flex-col">
+                <label className={labelCls}>Layout Analysis</label>
+                <button
+                  onClick={() => {
+                    const nextValue = cfg.enableColumnDetection === false;
+                    const nextCfg = { ...cfg, enableColumnDetection: nextValue };
+                    localStorage.setItem("pustakaku-settings", JSON.stringify(nextCfg));
+                    resetResults();
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all h-full ${cfg.enableColumnDetection !== false ? "border-sky-500/40 bg-sky-500/10 shadow-[0_0_15px_rgba(56,189,248,0.15)]" : "border-border hover:bg-secondary/20"}`}
+                >
+                  <Columns2 size={18} className={`shrink-0 ${cfg.enableColumnDetection !== false ? "text-sky-400" : "text-muted-foreground"}`} />
+                  <div className="flex flex-col items-start text-left min-w-0">
+                    <span className={`text-sm font-bold truncate w-full ${cfg.enableColumnDetection !== false ? "text-sky-400" : "text-foreground"}`}>Auto Columns</span>
+                    <span className="text-[10px] text-muted-foreground truncate w-full">
+                      {cfg.enableColumnDetection !== false ? "AI Layout Detect" : "Disabled (Faster)"}
+                    </span>
                   </div>
-                </label>
-                <label className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border transition-all cursor-pointer ${isParallel ? "border-primary/40 bg-primary/5" : "border-border hover:bg-secondary/20"}`}>
-                  <input type="radio" checked={isParallel} onChange={() => setIsParallel(true)} className="accent-primary" />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold">Parallel</span>
-                    <span className="text-[10px] text-muted-foreground">Concurrent (Fast)</span>
+                  <div className={`ml-auto w-8 h-4 shrink-0 rounded-full p-0.5 transition-all ${cfg.enableColumnDetection !== false ? "bg-sky-500" : "bg-secondary"}`}>
+                    <div className={`w-3 h-3 bg-white rounded-full transition-all ${cfg.enableColumnDetection !== false ? "translate-x-4" : "translate-x-0"}`} />
                   </div>
-                </label>
+                </button>
               </div>
             </div>
           </div>

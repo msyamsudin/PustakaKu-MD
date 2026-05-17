@@ -13,7 +13,7 @@ export type PdfDocument = pdfjsLib.PDFDocumentProxy;
 export async function loadPdfDocument(data: File | Uint8Array | ArrayBuffer): Promise<PdfDocument> {
   try {
     const arrayBuffer = data instanceof File ? await data.arrayBuffer() : data;
-    const loadingTask = pdfjsLib.getDocument({ 
+    const loadingTask = pdfjsLib.getDocument({
       data: arrayBuffer,
       // Use standard fonts for better performance and compatibility
       cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/cmaps/',
@@ -30,7 +30,7 @@ export async function loadPdfDocument(data: File | Uint8Array | ArrayBuffer): Pr
  * Renders a specific page from an already loaded PDF document.
  * Returns a Blob of the rendered image and its dimensions.
  */
-export function renderPageFromDoc(pdf: PdfDocument, pageNumber: number, scale: number = 2.0) {
+export function renderPageFromDoc(pdf: PdfDocument, pageNumber: number, scale: number = 2) {
   let renderTask: any = null;
   let cancelled = false;
 
@@ -40,31 +40,31 @@ export function renderPageFromDoc(pdf: PdfDocument, pageNumber: number, scale: n
       if (cancelled) throw new Error("Rendering cancelled");
 
       const viewport = page.getViewport({ scale });
-      
+
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d', { alpha: false });
-      
+
       if (!context) throw new Error("Could not create canvas context");
-      
+
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      
+
       // Set white background
       context.fillStyle = 'white';
       context.fillRect(0, 0, canvas.width, canvas.height);
-      
+
       const renderContext = {
         canvasContext: context,
         viewport: viewport,
         intent: 'display' as const,
         canvas: canvas
       };
-      
+
       renderTask = page.render(renderContext);
       await renderTask.promise;
-      
+
       if (cancelled) throw new Error("Rendering cancelled");
-      
+
       const width = canvas.width;
       const height = canvas.height;
 
@@ -97,7 +97,7 @@ export function renderPageFromDoc(pdf: PdfDocument, pageNumber: number, scale: n
       if (renderTask) {
         try {
           renderTask.cancel();
-        } catch (e) {}
+        } catch (e) { }
       }
     }
   };
@@ -148,7 +148,7 @@ export async function getPdfPageCount(data: File | PdfDocument | Uint8Array | Ar
   if (typeof data === 'object' && data !== null && 'numPages' in data) {
     return (data as PdfDocument).numPages;
   }
-  
+
   try {
     const pdf = await loadPdfDocument(data as File | Uint8Array | ArrayBuffer);
     const numPages = pdf.numPages;
@@ -181,7 +181,7 @@ export async function cropImageFromBlob(blob: Blob, box: number[]): Promise<Blob
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(blob);
-    
+
     img.onload = () => {
       try {
         const [ymin, xmin, ymax, xmax] = box;
@@ -209,7 +209,7 @@ export async function cropImageFromBlob(blob: Blob, box: number[]): Promise<Blob
         canvas.height = cropHeight;
 
         ctx.drawImage(img, left, top, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-        
+
         canvas.toBlob((croppedBlob) => {
           URL.revokeObjectURL(url);
           if (croppedBlob) resolve(croppedBlob);
@@ -226,4 +226,44 @@ export async function cropImageFromBlob(blob: Blob, box: number[]): Promise<Blob
     };
     img.src = url;
   });
+}
+
+/**
+ * Slices a page image into multiple Blobs based on the detected layout regions.
+ * Includes a small overlap to prevent cutting through text lines.
+ */
+export async function slicePageImage(
+  blob: Blob,
+  regions: any[] // LayoutRegion[]
+): Promise<{ slices: Blob[]; labels: string[] }> {
+  const slices: Blob[] = [];
+  const labels: string[] = [];
+
+  for (let i = 0; i < regions.length; i++) {
+    const region = regions[i];
+    
+    // Add small overlap (2% of height) to avoid cutting mid-line
+    const overlap = 0.02;
+    const yStart = Math.max(0, region.yStart - (i > 0 ? overlap : 0));
+    const yEnd = Math.min(1.0, region.yEnd + (i < regions.length - 1 ? overlap : 0));
+    
+    const xStart = region.xStart ?? 0;
+    const xEnd = region.xEnd ?? 1.0;
+
+    // Convert normalized 0-1 to 0-1000 for cropImageFromBlob
+    const box = [
+      yStart * 1000,
+      xStart * 1000,
+      yEnd * 1000,
+      xEnd * 1000
+    ];
+
+    const cropped = await cropImageFromBlob(blob, box);
+    slices.push(cropped);
+    
+    let label = region.type === 'full-width' ? 'Header/Footer' : `Column ${region.columnIndex + 1}`;
+    labels.push(label);
+  }
+
+  return { slices, labels };
 }

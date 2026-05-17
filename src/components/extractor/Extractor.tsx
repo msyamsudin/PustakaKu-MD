@@ -37,7 +37,7 @@ export function Extractor() {
   });
 
   // Destructure for convenience
-  const { file, isPdf, config, errorMsg, setFile, setErrorMsg, handleFileOpen: openFile, loadFile } = fileMgmt;
+  const { file, isPdf, config, setConfig, errorMsg, setFile, setErrorMsg, handleFileOpen: openFile, loadFile } = fileMgmt;
   const {
     pdfDoc, setPdfDoc, pdfPageCount, setPdfPageCount,
     currentPdfPage, setCurrentPdfPage,
@@ -53,6 +53,7 @@ export function Extractor() {
   } = mdCache;
   const {
     isExtracting, isPageExtracting, isStreaming, usage, setUsage, cost, setCost, extractDuration, setExtractDuration,
+    lastExtractionMethod,
     isBatchProcessing, batchProgress, selectedPages, setSelectedPages,
     handleExtract, handleBatchExtract, handleCancel,
     togglePageSelection, selectAllPages, selectUnextractedPages,
@@ -162,6 +163,14 @@ export function Extractor() {
     } catch (err) { console.error("Failed to copy!", err); }
   };
 
+  const handleToggleColumnDetection = () => {
+    if (!config) return;
+    const nextValue = config.enableColumnDetection === false;
+    const nextConfig = { ...config, enableColumnDetection: nextValue };
+    setConfig(nextConfig);
+    localStorage.setItem("pustakaku-settings", JSON.stringify(nextConfig));
+  };
+
   const getExportCtx = () => ({
     file: file!,
     pageCache,
@@ -187,6 +196,7 @@ export function Extractor() {
         usage={usage}
         cost={cost}
         extractDuration={extractDuration}
+        lastExtractionMethod={lastExtractionMethod}
         onFileOpen={handleFileOpen}
         onCloseDocument={handleCloseDocument}
         onExtract={handleExtract}
@@ -200,6 +210,7 @@ export function Extractor() {
           setShowMarkdownGrid(next);
           if (next) selectUnextractedPages(pdfPageCount, markdownCache);
         }}
+        onToggleColumnDetection={handleToggleColumnDetection}
       />
 
       {errorMsg && (

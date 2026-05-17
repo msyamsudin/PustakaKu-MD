@@ -25,9 +25,9 @@ export const PageThumbnail = memo(function PageThumbnail({
     thumbnailRenderQueue.add(async () => {
       if (!isMounted) return;
       try {
-        const blob = await renderPageFromDoc(doc, pageNum, 0.4).promise;
+        const result = await renderPageFromDoc(doc, pageNum, 0.4).promise;
         if (isMounted) {
-          onRenderComplete(pageNum, blob);
+          onRenderComplete(pageNum, result.blob);
           setIsLoading(false);
         }
       } catch (e) {

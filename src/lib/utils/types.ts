@@ -22,6 +22,7 @@ export interface AppConfig {
   supabaseBucket?: string;          // default: "page-images"
   batchMode?: "sequential" | "parallel";
   batchConcurrency?: number;        // default: 3
+  enableColumnDetection?: boolean;  // default: true
 }
 
 export interface BatchProgress {

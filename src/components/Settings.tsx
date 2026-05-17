@@ -39,6 +39,7 @@ export function Settings() {
     supabaseBucket: "page-images",
     batchMode: "sequential" as "sequential" | "parallel",
     batchConcurrency: 3,
+    enableColumnDetection: true,
   });
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
@@ -642,6 +643,35 @@ export function Settings() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Extraction Strategy Section */}
+        <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
+          <div className="px-5 py-4 border-b border-border bg-secondary/30 flex items-center gap-2">
+            <Globe size={16} className="text-primary" />
+            <h3 className="text-sm font-bold uppercase tracking-wider">Extraction Strategy</h3>
+          </div>
+
+          <div className="p-6 space-y-6">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <label className={labelCls}>Multi-Column Detection</label>
+                  <p className="text-xs text-muted-foreground">Automatically detect and slice 2-column layouts for better accuracy.</p>
+                </div>
+                <div 
+                  onClick={() => updateSetting("enableColumnDetection", !settings.enableColumnDetection)}
+                  className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-all duration-300 ${settings.enableColumnDetection ? "bg-primary" : "bg-secondary"}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-300 ${settings.enableColumnDetection ? "translate-x-6" : "translate-x-0"}`} />
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground px-1">
+                <Info size={10} className="inline mr-1" />
+                Recommended for academic papers. Requires more API calls per page.
+              </p>
+            </div>
           </div>
         </div>
 

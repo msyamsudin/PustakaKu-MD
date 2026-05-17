@@ -1,6 +1,7 @@
-import { UploadCloud, X, Zap, FileText, Copy, Check, Download, Coins, Timer, HardDrive, Cloud } from "lucide-react";
+import { UploadCloud, X, Zap, FileText, Copy, Check, Download, Coins, Timer, HardDrive, Cloud, Columns2 } from "lucide-react";
 import type { AppFile, AppConfig } from "../../lib/utils/types";
 import type { ExtractionResult } from "../../lib/api";
+import type { ExtractionMethodInfo } from "../../hooks/useExtraction";
 
 interface Props {
   file: AppFile | null;
@@ -16,6 +17,7 @@ interface Props {
   usage: ExtractionResult["usage"] | null;
   cost: number | null;
   extractDuration: number | null;
+  lastExtractionMethod?: ExtractionMethodInfo;
   onFileOpen: () => void;
   onCloseDocument: () => void;
   onExtract: () => void;
@@ -24,15 +26,18 @@ interface Props {
   onBatchDownload: () => void;
   onDownloadCombined: () => void;
   onToggleBatchMode: () => void;
+  onToggleColumnDetection: () => void;
 }
 
 export function TopBar({
   file, config, previewUrl, markdown, markdownCacheCount,
   isExtracting, isCopied, showPageGrid, showMarkdownGrid,
   selectedPagesCount: _selectedPagesCount, usage, cost, extractDuration,
+  lastExtractionMethod,
   onFileOpen, onCloseDocument, onExtract, onCopy,
   onSave, onBatchDownload, onDownloadCombined,
-  onToggleBatchMode
+  onToggleBatchMode,
+  onToggleColumnDetection
 }: Props) {
   return (
     <>
@@ -95,6 +100,26 @@ export function TopBar({
               "No provider configured"
             )}
           </div>
+
+          {lastExtractionMethod && (
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-[11px] font-semibold transition-all ${
+              lastExtractionMethod.type === "slicing"
+                ? "border-sky-500/30 bg-sky-500/10 text-sky-400"
+                : "border-accent/25 bg-accent/5 text-accent"
+            }`}>
+              {lastExtractionMethod.type === "slicing" ? (
+                <>
+                  <Columns2 size={12} className="text-sky-400 animate-pulse" />
+                  <span>Sliced ({lastExtractionMethod.columnCount} Cols / {lastExtractionMethod.sliceCount} Segs)</span>
+                </>
+              ) : (
+                <>
+                  <FileText size={12} className="text-accent" />
+                  <span>Full Page</span>
+                </>
+              )}
+            </div>
+          )}
           <button
             onClick={onToggleBatchMode}
             className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all border ${(showPageGrid || showMarkdownGrid)
@@ -105,6 +130,18 @@ export function TopBar({
           >
             <Zap size={16} className={(showPageGrid || showMarkdownGrid) ? "animate-pulse" : ""} />
             <span>Batch</span>
+          </button>
+
+          <button
+            onClick={onToggleColumnDetection}
+            className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all border ${config?.enableColumnDetection !== false
+              ? "bg-sky-500/10 border-sky-500/30 text-sky-400 shadow-[0_0_15px_rgba(56,189,248,0.25)]"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/70 border-border"
+              }`}
+            title="Auto-Detect Columns & Layout (AI Slicing)"
+          >
+            <Columns2 size={16} />
+            <span>Auto Columns</span>
           </button>
         </div>
 
