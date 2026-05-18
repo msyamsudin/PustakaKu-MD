@@ -96,6 +96,7 @@ export interface BenchmarkResult {
   totalTokens?: number;
   avgTokensPerPage?: number;
   tps?: number;
+  cps?: number;
   modelUsed?: string;
 
   // Cost (USD, summed)

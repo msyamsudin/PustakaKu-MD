@@ -485,6 +485,22 @@ export function useBenchmark(): UseBenchmarkReturn {
             }
           })();
 
+          // Accurate CPS calculation logic based on mode
+          const cps = (() => {
+            if (options?.isParallel) {
+              const parallelSpanMs = (firstPageStartMs !== undefined && lastPageEndMs !== undefined)
+                ? (lastPageEndMs - firstPageStartMs) 
+                : totalDurationMs;
+              return parallelSpanMs > 0 ? totalOutputChars / (parallelSpanMs / 1000) : 0;
+            } else {
+              const totalAiTimeMs = successPages.reduce((acc, p) => {
+                const aiTime = (p.durationMs || 0) - (p.uploadDurationMs || 0);
+                return acc + Math.max(0, aiTime);
+              }, 0);
+              return totalAiTimeMs > 0 ? totalOutputChars / (totalAiTimeMs / 1000) : 0;
+            }
+          })();
+
           const getFinalStatus = (): BenchmarkStatus => {
             if (failedCount === pageNums.length) return "error";
             if (failedCount > 0) return "partial";
@@ -514,6 +530,7 @@ export function useBenchmark(): UseBenchmarkReturn {
                 ? Math.round((totalPrompt + totalCompletion) / successPages.length)
                 : undefined,
             tps,
+            cps,
             modelUsed: modelToUse,
             estimatedCostUsd,
             avgPayloadKb: successPages.length > 0 ? totalPayload / successPages.length : undefined,

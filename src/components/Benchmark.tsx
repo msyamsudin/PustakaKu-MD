@@ -30,7 +30,7 @@ function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
   const headers = [
     "Scenario", "Status", "Model", "Execution Mode", "Pages OK", "Pages Failed", "Total Duration",
     "Avg TTFT", "Min TTFT", "Max TTFT", "StdDev TTFT",
-    "TPS",
+    "TPS", "CPS",
     "Avg Upload", "Min Upload", "Max Upload", "StdDev Upload",
     "Prompt Tokens", "Completion Tokens", "Avg Tokens/Page",
     "Avg Payload KB", "Avg Image KB", "Payload Efficiency", "Est. Cost USD", "Total Output Chars", "Resolution", "Error"
@@ -39,7 +39,7 @@ function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
     r.label, r.status, r.modelUsed || model, r.isParallel ? "Parallel" : "Sequential", r.pagesProcessed, r.pagesFailed,
     r.totalDurationMs ?? "",
     r.avgTtftMs?.toFixed(0) ?? "", r.minTtftMs?.toFixed(0) ?? "", r.maxTtftMs?.toFixed(0) ?? "", r.stdDevTtftMs?.toFixed(0) ?? "",
-    r.tps?.toFixed(1) ?? "0",
+    r.tps?.toFixed(1) ?? "0", r.cps?.toFixed(1) ?? "0",
     r.avgUploadMs?.toFixed(0) ?? "", r.minUploadMs?.toFixed(0) ?? "", r.maxUploadMs?.toFixed(0) ?? "", r.stdDevUploadMs?.toFixed(0) ?? "",
     r.promptTokens ?? "", r.completionTokens ?? "", r.avgTokensPerPage ?? "",
     r.avgPayloadKb?.toFixed(2) ?? "", r.avgImageSizeKb?.toFixed(2) ?? "",
@@ -123,9 +123,13 @@ function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkRe
         <td className={`${tdCls} text-right font-bold tabular-nums ${textCls} ${isBest ? "text-emerald-400" : "text-foreground/80"}`}>{fmt(r.totalDurationMs)}</td>
         <td className={`${tdCls} text-right tabular-nums text-muted-foreground/80 ${textCls}`}>{fmt(r.stdDevTtftMs)}</td>
         <td className={`${tdCls} text-right tabular-nums font-bold text-amber-400/80 ${textCls}`}>{r.tps?.toFixed(1) ?? "—"}</td>
+        <td className={`${tdCls} text-right tabular-nums font-bold text-blue-400/80 ${textCls}`}>{r.cps?.toFixed(1) ?? "—"}</td>
         <td className={`${tdCls} text-right tabular-nums text-muted-foreground/70 ${textCls}`}>{fmt(r.avgUploadMs)}</td>
         <td className={`${tdCls} text-right tabular-nums text-muted-foreground/80 ${textCls}`}>
           {r.promptTokens !== undefined ? fmtNum(r.promptTokens + (r.completionTokens || 0)) : "—"}
+        </td>
+        <td className={`${tdCls} text-right tabular-nums text-muted-foreground/80 ${textCls}`}>
+          {r.totalOutputChars !== undefined ? fmtNum(r.totalOutputChars) : "—"}
         </td>
         <td className={`${tdCls} text-right tabular-nums text-muted-foreground/70 ${textCls}`}>{fmtKb(r.avgPayloadKb)}</td>
         <td className={`${tdCls} text-right tabular-nums font-bold ${textCls} ${r.avgPayloadEfficiency !== undefined ? (r.avgPayloadEfficiency > 0 ? "text-emerald-400" : "text-rose-400") : "text-muted-foreground/70"}`}>
@@ -141,6 +145,7 @@ function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkRe
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.durationMs)}</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.ttftMs)}</td>
           <td className={`${tdCls} py-1.5 text-right`}>—</td>
+          <td className={`${tdCls} py-1.5 text-right`}>—</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.uploadDurationMs)}</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums text-muted-foreground/80`}>
             {pr.promptTokens !== undefined ? (
@@ -153,6 +158,9 @@ function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkRe
                 </span>
               </div>
             ) : "—"}
+          </td>
+          <td className={`${tdCls} py-1.5 text-right tabular-nums text-muted-foreground/80`}>
+            {pr.markdown?.length !== undefined ? fmtNum(pr.markdown.length) : "—"}
           </td>
           <td className={`${tdCls} py-1.5 text-right`}>—</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmtKb(pr.requestPayloadKb)}</td>
@@ -183,8 +191,10 @@ function ResultsDisplay({ results, isRunning, bestId, cheapestId }: {
         <th className={`text-right px-2 py-2 ${isCompact ? "w-[9%]" : ""}`}>Time</th>
         <th className={`text-right px-2 py-2 ${isCompact ? "w-[9%]" : ""}`}>σ TTFT</th>
         <th className={`text-right px-2 py-2 ${isCompact ? "w-[8%]" : ""} text-amber-400/80`}>TPS</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[8%]" : ""} text-blue-400/80`}>CPS</th>
         <th className={`text-right px-2 py-2 ${isCompact ? "w-[9%]" : ""}`}>Upload</th>
         <th className={`text-right px-2 py-2 ${isCompact ? "w-[10%]" : ""}`}>Tokens</th>
+        <th className={`text-right px-2 py-2 ${isCompact ? "w-[10%]" : ""}`}>Chars</th>
         <th className={`text-right px-2 py-2 ${isCompact ? "w-[10%]" : ""}`}>Payload</th>
         <th className={`text-right px-2 py-2 ${isCompact ? "w-[8%]" : ""}`}>{isCompact ? "Eff." : "Efficiency"}</th>
         <th className={`text-right px-2 py-2 ${isCompact ? "w-[11%]" : ""} text-emerald-400/80`}>Cost</th>
