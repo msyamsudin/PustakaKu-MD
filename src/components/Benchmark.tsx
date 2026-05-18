@@ -25,6 +25,11 @@ function findCheapestId(results: BenchmarkResult[]): string | null {
   if (!done.length) return null;
   return done.reduce((a, b) => a.estimatedCostUsd! < b.estimatedCostUsd! ? a : b).scenarioId;
 }
+function findBestCpsId(results: BenchmarkResult[]): string | null {
+  const done = results.filter(r => r.status === "done" && r.cps !== undefined && r.cps > 0);
+  if (!done.length) return null;
+  return done.reduce((a, b) => a.cps! > b.cps! ? a : b).scenarioId;
+}
 
 function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
   const headers = [
@@ -76,12 +81,14 @@ function LiveTimer({ startTime }: { startTime: number }) {
 
 
 // ── Scenario row (with expand for per-page detail) ─────────────────────────────
-function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkResult; isBest: boolean; isCheapest: boolean; isCompact?: boolean }) {
+function ResultRow({ r, isBest, isCheapest, isBestCps, isCompact = true }: { r: BenchmarkResult; isBest: boolean; isCheapest: boolean; isBestCps: boolean; isCompact?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const rowCls = r.status === "running" ? "bg-blue-500/5"
-    : isBest ? "bg-emerald-500/5"
-      : r.status === "error" ? "bg-destructive/5"
-        : r.status === "skipped" ? "opacity-50" : "";
+    : (isBest && isBestCps) ? "bg-gradient-to-r from-emerald-500/5 to-cyan-500/5"
+      : isBest ? "bg-emerald-500/5"
+        : isBestCps ? "bg-cyan-500/5"
+          : r.status === "error" ? "bg-destructive/5"
+            : r.status === "skipped" ? "opacity-50" : "";
   const hasPages = r.pageResults.length > 0;
 
   const tdCls = isCompact ? "px-2 py-2" : "px-4 py-4";
@@ -92,16 +99,18 @@ function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkRe
     <>
       <tr className={`transition-colors border-b border-white/2 ${rowCls}`}>
         <td className={`${tdCls} font-bold`}>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {hasPages && (
               <button onClick={() => setExpanded(e => !e)} className="text-muted-foreground hover:text-primary transition-colors shrink-0">
                 {expanded ? <ChevronDown size={isCompact ? 12 : 16} /> : <ChevronRight size={isCompact ? 12 : 16} />}
               </button>
             )}
-            <span className={`${labelCls} leading-tight ${isBest ? "text-emerald-400" : isCheapest ? "text-amber-400" : "text-foreground/90"}`}>
-              {isBest && "> "}
+            <span className={`${labelCls} leading-tight ${isBest ? "text-emerald-400" : isBestCps ? "text-cyan-400" : isCheapest ? "text-amber-400" : "text-foreground/90"}`}>
               {r.label}
             </span>
+            {isBest && <span title="Fastest Time" className="px-1 py-0.5 rounded text-[8px] font-bold tracking-wider bg-emerald-500/20 text-emerald-400 uppercase">Fastest</span>}
+            {isBestCps && <span title="Highest Characters per Second" className="px-1 py-0.5 rounded text-[8px] font-bold tracking-wider bg-cyan-500/20 text-cyan-400 uppercase">Best CPS</span>}
+            {isCheapest && <span title="Lowest Cost" className="px-1 py-0.5 rounded text-[8px] font-bold tracking-wider bg-amber-500/20 text-amber-400 uppercase">Cheapest</span>}
           </div>
           {r.status === "running" && r.currentTask && (
             <div className="flex items-center gap-2 text-[9px] text-blue-400/70 font-mono whitespace-nowrap mt-1 ml-4 animate-in fade-in slide-in-from-left-1">
@@ -123,7 +132,7 @@ function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkRe
         <td className={`${tdCls} text-right font-bold tabular-nums ${textCls} ${isBest ? "text-emerald-400" : "text-foreground/80"}`}>{fmt(r.totalDurationMs)}</td>
         <td className={`${tdCls} text-right tabular-nums text-muted-foreground/80 ${textCls}`}>{fmt(r.stdDevTtftMs)}</td>
         <td className={`${tdCls} text-right tabular-nums font-bold text-amber-400/80 ${textCls}`}>{r.tps?.toFixed(1) ?? "—"}</td>
-        <td className={`${tdCls} text-right tabular-nums font-bold text-blue-400/80 ${textCls}`}>{r.cps?.toFixed(1) ?? "—"}</td>
+        <td className={`${tdCls} text-right tabular-nums font-bold ${isBestCps ? "text-cyan-400" : "text-blue-400/80"} ${textCls}`}>{r.cps?.toFixed(1) ?? "—"}</td>
         <td className={`${tdCls} text-right tabular-nums text-muted-foreground/70 ${textCls}`}>{fmt(r.avgUploadMs)}</td>
         <td className={`${tdCls} text-right tabular-nums text-muted-foreground/80 ${textCls}`}>
           {r.promptTokens !== undefined ? fmtNum(r.promptTokens + (r.completionTokens || 0)) : "—"}
@@ -137,15 +146,17 @@ function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkRe
         </td>
         <td className={`${tdCls} text-right tabular-nums font-bold ${textCls} ${isCheapest ? "text-amber-400" : "text-muted-foreground/80"}`}>{fmtCost(r.estimatedCostUsd)}</td>
       </tr>
-      {expanded && hasPages && r.pageResults.map(pr => (
+      {expanded && hasPages && r.pageResults.map(pr => {
+        const pgAiTimeMs = Math.max(0, (pr.durationMs || 0) - (pr.uploadDurationMs || 0));
+        const pgCps = pgAiTimeMs > 0 && pr.markdown?.length ? (pr.markdown.length / (pgAiTimeMs / 1000)).toFixed(1) : "—";
+        return (
         <tr key={pr.pageNum} className={`bg-white/1 text-muted-foreground/50 border-b border-white/1 ${isCompact ? "text-[9px]" : "text-xs"}`}>
           <td className={`${isCompact ? "pl-8" : "pl-12"} py-1.5 font-mono italic`}>└─ {isCompact ? "p" : "page_"}{pr.pageNum}</td>
           <td className={`${tdCls} py-1.5`}>—</td>
-          <td className={`${tdCls} py-1.5 text-center`}>—</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.durationMs)}</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.ttftMs)}</td>
           <td className={`${tdCls} py-1.5 text-right`}>—</td>
-          <td className={`${tdCls} py-1.5 text-right`}>—</td>
+          <td className={`${tdCls} py-1.5 text-right tabular-nums text-blue-400/60`}>{pgCps}</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmt(pr.uploadDurationMs)}</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums text-muted-foreground/80`}>
             {pr.promptTokens !== undefined ? (
@@ -162,24 +173,25 @@ function ResultRow({ r, isBest, isCheapest, isCompact = true }: { r: BenchmarkRe
           <td className={`${tdCls} py-1.5 text-right tabular-nums text-muted-foreground/80`}>
             {pr.markdown?.length !== undefined ? fmtNum(pr.markdown.length) : "—"}
           </td>
-          <td className={`${tdCls} py-1.5 text-right`}>—</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums`}>{fmtKb(pr.requestPayloadKb)}</td>
           <td className={`${tdCls} py-1.5 text-right tabular-nums ${pr.payloadEfficiency !== undefined ? (pr.payloadEfficiency > 0 ? "text-emerald-400/60" : "text-rose-400/60") : ""}`}>
             {pr.payloadEfficiency !== undefined ? `${pr.payloadEfficiency > 0 ? "+" : ""}${pr.payloadEfficiency.toFixed(1)}%` : "—"}
           </td>
           <td className={`${tdCls} py-1.5 text-right`}>—</td>
         </tr>
-      ))}
+        );
+      })}
     </>
   );
 }
 
 // ── Results Display (with Zoom capability) ──────────────────────────────────
-function ResultsDisplay({ results, isRunning, bestId, cheapestId }: {
+function ResultsDisplay({ results, isRunning, bestId, cheapestId, bestCpsId }: {
   results: BenchmarkResult[];
   isRunning: boolean;
   bestId: string | null;
   cheapestId: string | null;
+  bestCpsId: string | null;
 }) {
   const [isZoomed, setIsZoomed] = useState(false);
 
@@ -213,6 +225,7 @@ function ResultsDisplay({ results, isRunning, bestId, cheapestId }: {
               r={r}
               isBest={r.scenarioId === bestId}
               isCheapest={r.scenarioId === cheapestId && cheapestId !== bestId}
+              isBestCps={r.scenarioId === bestCpsId && bestCpsId !== bestId}
               isCompact={isCompact}
             />
           ))}
@@ -376,6 +389,7 @@ export function Benchmark() {
 
   const bestId = findBestId(results);
   const cheapestId = findCheapestId(results);
+  const bestCpsId = findBestCpsId(results);
   const anyDone = results.some(r => r.status === "done");
 
   const labelCls = "block text-[10px] font-bold text-muted-foreground mb-2 uppercase tracking-[0.1em]";
@@ -605,6 +619,7 @@ export function Benchmark() {
           isRunning={isRunning}
           bestId={bestId}
           cheapestId={cheapestId}
+          bestCpsId={bestCpsId}
         />
       )}
 

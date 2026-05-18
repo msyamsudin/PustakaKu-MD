@@ -107,6 +107,7 @@ export function LogViewer() {
         acc.totalTokens += Number(log.details.tokens || log.details.total_tokens || 0);
         acc.totalComputeTime += Number(log.details.duration || 0);
         acc.totalCost += Number(log.details.cost || log.details.total_cost || 0);
+        acc.totalChars += Number(log.details.chars || 0);
         acc.successCount += 1;
         if (typeof log.details.ttft === "number") {
           acc.ttftValues.push(log.details.ttft);
@@ -120,6 +121,7 @@ export function LogViewer() {
       totalTokens: 0,
       totalComputeTime: 0,
       totalCost: 0,
+      totalChars: 0,
       successCount: 0,
       errorCount: 0,
       ttftValues: [] as number[],
@@ -137,6 +139,11 @@ export function LogViewer() {
   const avgTokensPerSec =
     totalElapsedDuration > 0
       ? (summary.totalTokens / totalElapsedDuration).toFixed(1)
+      : "0";
+
+  const avgCharsPerSec =
+    totalElapsedDuration > 0
+      ? (summary.totalChars / totalElapsedDuration).toFixed(1)
       : "0";
 
 
@@ -420,8 +427,11 @@ export function LogViewer() {
                   </div>
 
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-muted-foreground/40 text-[9px] uppercase tracking-widest">Consumption</span>
-                    <span className="text-primary font-black text-base">{summary.totalTokens.toLocaleString()}<span className="text-[10px] ml-1 opacity-50 uppercase">tk</span></span>
+                    <span className="text-muted-foreground/40 text-[9px] uppercase tracking-widest">Output</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-primary font-black text-base">{summary.totalTokens.toLocaleString()}<span className="text-[10px] ml-0.5 opacity-50 uppercase font-bold">tk</span></span>
+                      <span className="text-emerald-400 font-black text-base">{summary.totalChars.toLocaleString()}<span className="text-[10px] ml-0.5 opacity-50 uppercase font-bold">ch</span></span>
+                    </div>
                   </div>
 
                   <div className="flex flex-col gap-0.5">
@@ -429,9 +439,12 @@ export function LogViewer() {
                     <span className="text-sky-400 font-black text-base">{totalElapsedDuration.toFixed(1)}<span className="text-[10px] ml-1 opacity-50 uppercase">sec</span></span>
                   </div>
 
-                  <div className="flex flex-col gap-0.5 border-l border-white/5 pl-10">
-                    <span className="text-muted-foreground/40 text-[9px] uppercase tracking-widest">Performance</span>
-                    <span className="text-amber-400 font-black text-base">{avgTokensPerSec}<span className="text-[10px] ml-1 opacity-50 uppercase">t/s</span></span>
+                  <div className="flex flex-col gap-0.5 border-l border-white/5 pl-8">
+                    <span className="text-muted-foreground/40 text-[9px] uppercase tracking-widest">Speed</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-amber-400 font-black text-base">{avgTokensPerSec}<span className="text-[10px] ml-0.5 opacity-50 uppercase font-bold">t/s</span></span>
+                      <span className="text-blue-400 font-black text-base">{avgCharsPerSec}<span className="text-[10px] ml-0.5 opacity-50 uppercase font-bold">c/s</span></span>
+                    </div>
                   </div>
 
                   {summary.ttftValues.length > 0 && (

@@ -239,7 +239,8 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
                 model,
                 tokens: totalTokens,
                 duration: durationSec,
-                ttft: ttftMs
+                ttft: ttftMs,
+                chars: accumulatedMarkdown.length
               });
 
               usage = parsed.prompt_eval_count ? {
@@ -362,7 +363,8 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
         tokens: usage?.total_tokens,
         cost: usage?.total_cost ?? usage?.cost, // Try both
         duration: durationSec,
-        ttft: ttftMs
+        ttft: ttftMs,
+        chars: accumulatedMarkdown.length
       });
 
       return {
@@ -522,7 +524,8 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
         model,
         tokens: usage?.total_tokens,
         duration: durationSec,
-        ttft: ttftMs
+        ttft: ttftMs,
+        chars: accumulatedMarkdown.length
       });
 
       return {
