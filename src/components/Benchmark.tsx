@@ -28,7 +28,7 @@ function findBestCharsId(results: BenchmarkResult[]): string | null {
 
 function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
   const headers = [
-    "Scenario", "Status", "Model", "Execution Mode", "Pages OK", "Pages Failed", "Total Duration",
+    "Scenario", "Status", "Model", "Execution Mode", "Layout Analysis", "Pages OK", "Pages Failed", "Total Duration",
     "Avg TTFT", "Min TTFT", "Max TTFT", "StdDev TTFT",
     "TPS", "CPS",
     "Avg Upload", "Min Upload", "Max Upload", "StdDev Upload",
@@ -36,7 +36,9 @@ function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
     "Avg Payload KB", "Avg Image KB", "Payload Efficiency", "Est. Cost USD", "Total Output Chars", "Resolution", "Error"
   ];
   const rows = results.map((r: BenchmarkResult) => [
-    r.label, r.status, r.modelUsed || model, r.isParallel ? "Parallel" : "Sequential", r.pagesProcessed, r.pagesFailed,
+    r.label, r.status, r.modelUsed || model, r.isParallel ? "Parallel" : "Sequential",
+    r.enableColumnDetection !== false ? "ON" : "OFF",
+    r.pagesProcessed, r.pagesFailed,
     r.totalDurationMs ?? "",
     r.avgTtftMs?.toFixed(0) ?? "", r.minTtftMs?.toFixed(0) ?? "", r.maxTtftMs?.toFixed(0) ?? "", r.stdDevTtftMs?.toFixed(0) ?? "",
     r.tps?.toFixed(1) ?? "0", r.cps?.toFixed(1) ?? "0",
@@ -185,6 +187,8 @@ function ResultsDisplay({ results, isRunning, bestCpsId, bestCharsId }: {
   bestCharsId: string | null;
 }) {
   const [isZoomed, setIsZoomed] = useState(false);
+  const firstResult = results[0];
+  const autoAnalysisOn = firstResult?.enableColumnDetection !== false;
 
   const TableHeader = ({ isCompact }: { isCompact: boolean }) => (
     <thead className={`${isCompact ? "text-[10px]" : "text-xs"} border-b border-white/5 bg-white/5 text-muted-foreground/70 font-bold uppercase tracking-tight`}>
@@ -237,9 +241,12 @@ function ResultsDisplay({ results, isRunning, bestCpsId, bestCharsId }: {
     <>
       {/* Compact View */}
       <div className="bg-[#0c0c0c] border border-white/10 rounded-none overflow-hidden shadow-2xl group relative">
-        <div className="px-5 py-3 border-b border-white/5 bg-black/40 flex items-center gap-3">
+        <div className="px-5 py-3 border-b border-white/5 bg-black/40 flex items-center gap-3 flex-wrap">
           <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">Execution Results</h3>
           {modelText && <span className="text-[9px] text-muted-foreground/40 font-mono italic opacity-60">{modelText}</span>}
+          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border leading-none ${autoAnalysisOn ? "text-sky-400 bg-sky-500/10 border-sky-500/20" : "text-muted-foreground bg-secondary border-border"}`}>
+            Layout Analysis: {autoAnalysisOn ? "ON" : "OFF"}
+          </span>
           {isRunning && (
             <span className="ml-auto inline-flex items-center gap-1.5 text-[9px] text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 animate-pulse">
               $ monitoring_active...
@@ -269,9 +276,9 @@ function ResultsDisplay({ results, isRunning, bestCpsId, bestCharsId }: {
           <div className="w-full max-w-7xl max-h-[90vh] bg-[#080808] border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col relative overflow-hidden animate-in zoom-in-95 duration-300">
             {/* Modal Header */}
             <div className="px-8 py-5 border-b border-white/10 bg-black/60 flex items-center justify-between">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
                 <div>
-                  <h3 className="text-sm font-bold uppercase tracking-[0.3em] text-primary mb-1">Benchmark Analysis</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-[0.3em] text-primary mb-1">Processing Metrics</h3>
                   <p className="text-[10px] text-muted-foreground/80 uppercase tracking-widest font-mono">Multimodal Input Efficiency Report</p>
                 </div>
                 {modelText && (
@@ -282,6 +289,9 @@ function ResultsDisplay({ results, isRunning, bestCpsId, bestCharsId }: {
                     {modelText}
                   </span>
                 )}
+                <span className={`text-[10px] font-mono px-3 py-1 rounded border leading-none ${autoAnalysisOn ? "text-sky-400 bg-sky-500/10 border-sky-500/20" : "text-muted-foreground bg-white/5 border-white/5"}`}>
+                  Layout Analysis: {autoAnalysisOn ? "ON" : "OFF"}
+                </span>
               </div>
               <button
                 onClick={() => setIsZoomed(false)}
@@ -397,14 +407,19 @@ export function Benchmark() {
 
       {/* Config card */}
       <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-        <div className="px-5 py-4 border-b border-border bg-secondary/30 flex items-center gap-2">
+        <div className="px-5 py-4 border-b border-border bg-secondary/30 flex items-center gap-2 flex-wrap">
           <Zap size={15} className="text-primary" />
           <h3 className="text-sm font-bold uppercase tracking-wider">Configuration</h3>
-          {activeModel !== "—" && (
-            <span className="ml-auto text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded">
-              Model: {activeModel}
+          <div className="ml-auto flex items-center gap-2">
+            {activeModel !== "—" && (
+              <span className="text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded border border-border">
+                Model: {activeModel}
+              </span>
+            )}
+            <span className={`text-[10px] font-mono px-2 py-0.5 rounded border leading-none ${cfg.enableColumnDetection !== false ? "text-sky-400 bg-sky-500/10 border-sky-500/20" : "text-muted-foreground bg-secondary border-border"}`}>
+              Layout Analysis: {cfg.enableColumnDetection !== false ? "ON" : "OFF"}
             </span>
-          )}
+          </div>
         </div>
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">

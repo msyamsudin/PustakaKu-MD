@@ -74,6 +74,7 @@ export interface BenchmarkResult {
   label: string;
   status: BenchmarkStatus;
   isParallel?: boolean;
+  enableColumnDetection?: boolean;
 
   // Aggregates across all pages
   pagesProcessed: number;

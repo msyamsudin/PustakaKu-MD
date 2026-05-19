@@ -135,6 +135,7 @@ export function useBenchmark(): UseBenchmarkReturn {
     async (pdfFile: File, pageNums: number[], scenarios: BenchmarkScenario[], options?: { isParallel?: boolean }) => {
       if (isRunning || pageNums.length === 0 || scenarios.length === 0) return;
 
+      const cfg = getConfig();
       stopRef.current = false;
       setIsRunning(true);
 
@@ -145,13 +146,12 @@ export function useBenchmark(): UseBenchmarkReturn {
           label: s.label,
           status: "pending",
           isParallel: options?.isParallel,
+          enableColumnDetection: cfg.enableColumnDetection !== false,
           pagesProcessed: 0,
           pagesFailed: 0,
           pageResults: [],
         }))
       );
-
-      const cfg = getConfig();
       logger.info(`[Benchmark] Starting benchmark session`, {
         file: pdfFile.name,
         pages: pageNums.length,
