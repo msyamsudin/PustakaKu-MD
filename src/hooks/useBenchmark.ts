@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { extractMarkdown, extractMarkdownWithSlicing } from "../lib/api";
 import { logger } from "../lib/logger";
 import { renderPageFromDoc, loadPdfDocument, blobToBase64, slicePageImage } from "../lib/pdfUtils";
@@ -114,7 +114,22 @@ export interface UseBenchmarkReturn {
 }
 
 export function useBenchmark(): UseBenchmarkReturn {
-  const [results, setResults] = useState<BenchmarkResult[]>([]);
+  const [results, setResults] = useState<BenchmarkResult[]>(() => {
+    try {
+      const saved = localStorage.getItem("pustakaku-benchmark-results");
+      if (saved) {
+        const parsed = JSON.parse(saved) as BenchmarkResult[];
+        return parsed.map(r =>
+          (r.status === "running" || r.status === "pending")
+            ? { ...r, status: "skipped" as const, currentTask: undefined, taskStartTime: undefined }
+            : r
+        );
+      }
+    } catch (e) {
+      console.error("Failed to parse saved benchmark results", e);
+    }
+    return [];
+  });
   const [isRunning, setIsRunning] = useState(false);
   const stopRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -125,6 +140,17 @@ export function useBenchmark(): UseBenchmarkReturn {
   }, []);
 
   const resetResults = useCallback(() => setResults([]), []);
+
+  useEffect(() => {
+    localStorage.setItem("pustakaku-benchmark-results", JSON.stringify(results));
+  }, [results]);
+
+  useEffect(() => {
+    return () => {
+      stopRef.current = true;
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const patchResult = (id: string, patch: Partial<BenchmarkResult>) => {
     setResults((prev) =>
@@ -140,20 +166,30 @@ export function useBenchmark(): UseBenchmarkReturn {
       stopRef.current = false;
       setIsRunning(true);
 
-      // Initialise results
-      setResults(
-        scenarios.map((s) => ({
-          scenarioId: s.id,
-          label: s.label,
-          status: "pending",
-          isParallel: options?.isParallel,
-          enableColumnDetection: cfg.enableColumnDetection !== false,
-          enableLoopDetection: options?.enableLoopDetection !== false,
-          pagesProcessed: 0,
-          pagesFailed: 0,
-          pageResults: [],
-        }))
-      );
+      // Initialise results by merging new scenarios into existing results
+      setResults((prev) => {
+        const nextResults = [...prev];
+        scenarios.forEach((s) => {
+          const newEntry = {
+            scenarioId: s.id,
+            label: s.label,
+            status: "pending" as const,
+            isParallel: options?.isParallel,
+            enableColumnDetection: cfg.enableColumnDetection !== false,
+            enableLoopDetection: options?.enableLoopDetection !== false,
+            pagesProcessed: 0,
+            pagesFailed: 0,
+            pageResults: [],
+          };
+          const existingIdx = nextResults.findIndex((r) => r.scenarioId === s.id);
+          if (existingIdx !== -1) {
+            nextResults[existingIdx] = newEntry;
+          } else {
+            nextResults.push(newEntry);
+          }
+        });
+        return nextResults;
+      });
       logger.info(`[Benchmark] Starting benchmark session`, {
         file: pdfFile.name,
         pages: pageNums.length,
