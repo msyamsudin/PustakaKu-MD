@@ -187,19 +187,21 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
 
     if (provider === "ollama") {
       const url = options.ollamaUrl?.replace(/\/$/, '') || "http://localhost:11434";
-      const prompt = options.systemPromptOverride || SYSTEM_PROMPT;
+      const systemPrompt = options.systemPromptOverride || SYSTEM_PROMPT;
 
       const response = await fetch(`${url}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: model || "llava:latest",
-          prompt: prompt,
+          prompt: "Extract all text and structure from this image as clean Markdown according to the system instructions. Output only the final Markdown.",
+          system: systemPrompt,
           images: [base64Data],
           stream: true, // Enable streaming
           options: {
             num_predict: 4096,
-            temperature: 0
+            temperature: 0,
+            num_ctx: 8192 // Ensure sufficiently large context window for vision model tokens and prompt + output
           }
         }),
         signal: options.signal
