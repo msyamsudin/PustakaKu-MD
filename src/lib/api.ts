@@ -18,6 +18,7 @@ interface ExtractionOptions {
   onChunk?: (text: string) => void;
   signal?: AbortSignal;
   systemPromptOverride?: string; // For layout-aware slicing
+  enableLoopDetection?: boolean;
 }
 
 const SYSTEM_PROMPT = `You are an expert system for extracting text and structure from images and scanned documents.
@@ -229,7 +230,7 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
             if (parsed.response) {
               accumulatedMarkdown += parsed.response;
               if (options.onChunk) options.onChunk(parsed.response);
-              if (isAiResponseLooping(accumulatedMarkdown)) {
+              if (options.enableLoopDetection !== false && isAiResponseLooping(accumulatedMarkdown)) {
                 throw new LoopDetectedError();
               }
             }
@@ -328,7 +329,7 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
             if (content) {
               accumulatedMarkdown += content;
               if (options.onChunk) options.onChunk(content);
-              if (isAiResponseLooping(accumulatedMarkdown)) {
+              if (options.enableLoopDetection !== false && isAiResponseLooping(accumulatedMarkdown)) {
                 throw new LoopDetectedError();
               }
             }
@@ -503,7 +504,7 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
             if (content) {
               accumulatedMarkdown += content;
               if (options.onChunk) options.onChunk(content);
-              if (isAiResponseLooping(accumulatedMarkdown)) {
+              if (options.enableLoopDetection !== false && isAiResponseLooping(accumulatedMarkdown)) {
                 throw new LoopDetectedError();
               }
             }

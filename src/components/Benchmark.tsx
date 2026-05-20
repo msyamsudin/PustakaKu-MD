@@ -28,7 +28,7 @@ function findBestCharsId(results: BenchmarkResult[]): string | null {
 
 function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
   const headers = [
-    "Scenario", "Status", "Model", "Execution Mode", "Layout Analysis", "Pages OK", "Pages Failed", "Total Duration",
+    "Scenario", "Status", "Model", "Execution Mode", "Layout Analysis", "Loop Detection", "Pages OK", "Pages Failed", "Total Duration",
     "Avg TTFT", "Min TTFT", "Max TTFT", "StdDev TTFT",
     "TPS", "CPS",
     "Avg Upload", "Min Upload", "Max Upload", "StdDev Upload",
@@ -38,6 +38,7 @@ function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
   const rows = results.map((r: BenchmarkResult) => [
     r.label, r.status, r.modelUsed || model, r.isParallel ? "Parallel" : "Sequential",
     r.enableColumnDetection !== false ? "ON" : "OFF",
+    r.enableLoopDetection !== false ? "ON" : "OFF",
     r.pagesProcessed, r.pagesFailed,
     r.totalDurationMs ?? "",
     r.avgTtftMs?.toFixed(0) ?? "", r.minTtftMs?.toFixed(0) ?? "", r.maxTtftMs?.toFixed(0) ?? "", r.stdDevTtftMs?.toFixed(0) ?? "",
@@ -247,6 +248,9 @@ function ResultsDisplay({ results, isRunning, bestCpsId, bestCharsId }: {
           <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border leading-none ${autoAnalysisOn ? "text-sky-400 bg-sky-500/10 border-sky-500/20" : "text-muted-foreground bg-secondary border-border"}`}>
             Layout Analysis: {autoAnalysisOn ? "ON" : "OFF"}
           </span>
+          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border leading-none ${firstResult?.enableLoopDetection !== false ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-muted-foreground bg-secondary border-border"}`}>
+            Loop Detection: {firstResult?.enableLoopDetection !== false ? "ON" : "OFF"}
+          </span>
           {isRunning && (
             <span className="ml-auto inline-flex items-center gap-1.5 text-[9px] text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 animate-pulse">
               $ monitoring_active...
@@ -291,6 +295,9 @@ function ResultsDisplay({ results, isRunning, bestCpsId, bestCharsId }: {
                 )}
                 <span className={`text-[10px] font-mono px-3 py-1 rounded border leading-none ${autoAnalysisOn ? "text-sky-400 bg-sky-500/10 border-sky-500/20" : "text-muted-foreground bg-white/5 border-white/5"}`}>
                   Layout Analysis: {autoAnalysisOn ? "ON" : "OFF"}
+                </span>
+                <span className={`text-[10px] font-mono px-3 py-1 rounded border leading-none ${firstResult?.enableLoopDetection !== false ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-muted-foreground bg-white/5 border-white/5"}`}>
+                  Loop Detection: {firstResult?.enableLoopDetection !== false ? "ON" : "OFF"}
                 </span>
               </div>
               <button
@@ -349,6 +356,7 @@ export function Benchmark() {
   const [pageTo, setPageTo] = useState(3);
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set(ALL_SCENARIOS.map(s => s.id)));
   const [isParallel, setIsParallel] = useState(false);
+  const [enableLoopDetection, setEnableLoopDetection] = useState(true);
   const [dragOver, setDragOver] = useState(false);
   const [loadingPdf, setLoadingPdf] = useState(false);
 
@@ -380,7 +388,7 @@ export function Benchmark() {
     const scenarios = scenarioChecks
       .filter(s => enabledIds.has(s.id))
       .map(({ check: _check, ...s }) => s);
-    await runBenchmark(pdfFile, pageNums, scenarios, { isParallel });
+    await runBenchmark(pdfFile, pageNums, scenarios, { isParallel, enableLoopDetection });
   };
 
   const toggleId = (id: string, val: boolean) => {
@@ -533,7 +541,7 @@ export function Benchmark() {
             )}
 
             {/* Execution mode & Slicing */}
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="md:col-span-2 flex flex-col">
                 <label className={labelCls}>Execution Mode</label>
                 <div className="grid grid-cols-2 gap-4 flex-1">
@@ -574,6 +582,27 @@ export function Benchmark() {
                   </div>
                   <div className={`ml-auto w-8 h-4 shrink-0 rounded-full p-0.5 transition-all ${cfg.enableColumnDetection !== false ? "bg-sky-500" : "bg-secondary"}`}>
                     <div className={`w-3 h-3 bg-white rounded-full transition-all ${cfg.enableColumnDetection !== false ? "translate-x-4" : "translate-x-0"}`} />
+                  </div>
+                </button>
+              </div>
+
+              <div className="flex flex-col">
+                <label className={labelCls}>Loop Detection</label>
+                <button
+                  onClick={() => {
+                    setEnableLoopDetection(prev => !prev);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all h-full ${enableLoopDetection ? "border-emerald-500/40 bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.15)]" : "border-border hover:bg-secondary/20"}`}
+                >
+                  <ShieldCheck size={18} className={`shrink-0 ${enableLoopDetection ? "text-emerald-400" : "text-muted-foreground"}`} />
+                  <div className="flex flex-col items-start text-left min-w-0">
+                    <span className={`text-sm font-bold truncate w-full ${enableLoopDetection ? "text-emerald-400" : "text-foreground"}`}>Dual-Guard</span>
+                    <span className="text-[10px] text-muted-foreground truncate w-full">
+                      {enableLoopDetection ? "Prevent Loops" : "Disabled"}
+                    </span>
+                  </div>
+                  <div className={`ml-auto w-8 h-4 shrink-0 rounded-full p-0.5 transition-all ${enableLoopDetection ? "bg-emerald-500" : "bg-secondary"}`}>
+                    <div className={`w-3 h-3 bg-white rounded-full transition-all ${enableLoopDetection ? "translate-x-4" : "translate-x-0"}`} />
                   </div>
                 </button>
               </div>

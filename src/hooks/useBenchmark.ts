@@ -106,7 +106,7 @@ export interface UseBenchmarkReturn {
     pdfFile: File,
     pageNums: number[],
     scenarios: BenchmarkScenario[],
-    options?: { isParallel?: boolean }
+    options?: { isParallel?: boolean; enableLoopDetection?: boolean }
   ) => Promise<void>;
   stopBenchmark: () => void;
   resetResults: () => void;
@@ -132,7 +132,7 @@ export function useBenchmark(): UseBenchmarkReturn {
   };
 
   const runBenchmark = useCallback(
-    async (pdfFile: File, pageNums: number[], scenarios: BenchmarkScenario[], options?: { isParallel?: boolean }) => {
+    async (pdfFile: File, pageNums: number[], scenarios: BenchmarkScenario[], options?: { isParallel?: boolean; enableLoopDetection?: boolean }) => {
       if (isRunning || pageNums.length === 0 || scenarios.length === 0) return;
 
       const cfg = getConfig();
@@ -147,6 +147,7 @@ export function useBenchmark(): UseBenchmarkReturn {
           status: "pending",
           isParallel: options?.isParallel,
           enableColumnDetection: cfg.enableColumnDetection !== false,
+          enableLoopDetection: options?.enableLoopDetection !== false,
           pagesProcessed: 0,
           pagesFailed: 0,
           pageResults: [],
@@ -330,6 +331,7 @@ export function useBenchmark(): UseBenchmarkReturn {
                 imageUrl,
                 mimeType,
                 signal: abortRef.current?.signal,
+                enableLoopDetection: options?.enableLoopDetection !== false,
                 onChunk: () => {
                   if (!firstChunk) {
                     pageResult.ttftMs = performance.now() - aiStart;

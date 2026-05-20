@@ -75,6 +75,7 @@ export interface BenchmarkResult {
   status: BenchmarkStatus;
   isParallel?: boolean;
   enableColumnDetection?: boolean;
+  enableLoopDetection?: boolean;
 
   // Aggregates across all pages
   pagesProcessed: number;
