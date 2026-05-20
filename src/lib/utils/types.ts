@@ -46,6 +46,7 @@ export interface BenchmarkScenario {
   label: string;           // Human-readable name
   provider: Provider;
   imageInputMode: ImageInputMode;
+  selectedModel?: string;  // Individual model selection overriding global/provider settings
 }
 
 export type BenchmarkStatus = "pending" | "running" | "done" | "error" | "skipped" | "partial";

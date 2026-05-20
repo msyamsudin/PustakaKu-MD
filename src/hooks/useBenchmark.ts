@@ -49,7 +49,7 @@ export function verifyScenario(
   }
 
   if (scenario.provider === "ollama") {
-    if (!cfg.ollamaModel?.trim() && !cfg.selectedModel?.trim()) {
+    if (!scenario.selectedModel?.trim() && !cfg.ollamaModel?.trim() && !cfg.selectedModel?.trim()) {
       return { valid: false, reason: "Ollama model not configured in Settings." };
     }
     return { valid: true };
@@ -59,7 +59,7 @@ export function verifyScenario(
     if (!cfg.openRouterKey?.trim()) {
       return { valid: false, reason: "OpenRouter API Key not configured in Settings." };
     }
-    if (!cfg.openRouterModel?.trim() && !cfg.selectedModel?.trim()) {
+    if (!scenario.selectedModel?.trim() && !cfg.openRouterModel?.trim() && !cfg.selectedModel?.trim()) {
       return { valid: false, reason: "OpenRouter model not configured." };
     }
     if (scenario.imageInputMode === "supabase") {
@@ -75,13 +75,14 @@ export function verifyScenario(
   // Final: ensure at least one resolvable model exists for this provider
   // (mirrors the model resolution logic in runBenchmark)
   const resolvedModel =
+    scenario.selectedModel?.trim() ||
     (scenario.provider === "google" && cfg.googleModel?.trim()) ||
     (scenario.provider === "openrouter" && cfg.openRouterModel?.trim()) ||
     (scenario.provider === "anthropic" && cfg.anthropicModel?.trim()) ||
     cfg.selectedModel?.trim();
 
   if (!resolvedModel) {
-    return { valid: false, reason: "No model selected in Settings." };
+    return { valid: false, reason: "No model selected." };
   }
 
   return { valid: true };
@@ -216,11 +217,14 @@ export function useBenchmark(): UseBenchmarkReturn {
           const scenarioStart = performance.now();
 
           // Determine the correct model for this provider (fixed per scenario)
-          let modelToUse = cfg.selectedModel;
-          if (scenario.provider === "google" && cfg.googleModel) modelToUse = cfg.googleModel;
-          else if (scenario.provider === "openrouter" && cfg.openRouterModel) modelToUse = cfg.openRouterModel;
-          else if (scenario.provider === "anthropic" && cfg.anthropicModel) modelToUse = cfg.anthropicModel;
-          else if (scenario.provider === "ollama" && cfg.ollamaModel) modelToUse = cfg.ollamaModel;
+          let modelToUse: string = scenario.selectedModel || "";
+          if (!modelToUse) {
+            modelToUse = cfg.selectedModel || "";
+            if (scenario.provider === "google" && cfg.googleModel) modelToUse = cfg.googleModel || "";
+            else if (scenario.provider === "openrouter" && cfg.openRouterModel) modelToUse = cfg.openRouterModel || "";
+            else if (scenario.provider === "anthropic" && cfg.anthropicModel) modelToUse = cfg.anthropicModel || "";
+            else if (scenario.provider === "ollama" && cfg.ollamaModel) modelToUse = cfg.ollamaModel || "";
+          }
 
           const processPage = async (pi: number) => {
             if (stopRef.current || abortRef.current?.signal.aborted) {

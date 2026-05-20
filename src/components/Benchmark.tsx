@@ -7,6 +7,8 @@ import {
 import { useBenchmark, verifyScenario } from "../hooks/useBenchmark";
 import { getPdfPageCount } from "../lib/pdfUtils";
 import { BenchmarkConsole } from "./BenchmarkConsole";
+import { fetchModels } from "../lib/api";
+import type { Provider, ModelInfo } from "../lib/api";
 import type { BenchmarkScenario, BenchmarkResult } from "../lib/utils/types";
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
@@ -360,9 +362,128 @@ export function Benchmark() {
   const [dragOver, setDragOver] = useState(false);
   const [loadingPdf, setLoadingPdf] = useState(false);
 
-  // Re-evaluate settings every render (reactive)
-  const scenarioChecks = ALL_SCENARIOS.map(s => ({ ...s, check: verifyScenario(s) }));
+  const [providerModels, setProviderModels] = useState<Record<Provider, ModelInfo[]>>({
+    google: [],
+    openrouter: [],
+    anthropic: [],
+    ollama: [],
+  });
+
+  const [scenarioModels, setScenarioModels] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem("pustakaku-benchmark-scenario-models");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("pustakaku-benchmark-scenario-models", JSON.stringify(scenarioModels));
+  }, [scenarioModels]);
+
   const cfg = (() => { try { return JSON.parse(localStorage.getItem("pustakaku-settings") || "{}"); } catch { return {}; } })();
+
+  const getResolvedModelForScenario = useCallback((scenario: BenchmarkScenario) => {
+    if (scenarioModels[scenario.id]) {
+      return scenarioModels[scenario.id];
+    }
+    if (scenario.provider === "google" && cfg.googleModel) return cfg.googleModel;
+    if (scenario.provider === "openrouter" && cfg.openRouterModel) return cfg.openRouterModel;
+    if (scenario.provider === "anthropic" && cfg.anthropicModel) return cfg.anthropicModel;
+    if (scenario.provider === "ollama" && cfg.ollamaModel) return cfg.ollamaModel;
+    return cfg.selectedModel || "";
+  }, [scenarioModels, cfg]);
+
+  const fetchAllProviderModels = useCallback(async () => {
+    const providers: Provider[] = ["google", "openrouter", "anthropic", "ollama"];
+    for (const p of providers) {
+      let hasCredentials = false;
+      if (p === "google" && cfg.googleApiKey?.trim()) hasCredentials = true;
+      if (p === "openrouter" && cfg.openRouterKey?.trim()) hasCredentials = true;
+      if (p === "anthropic" && cfg.anthropicApiKey?.trim()) hasCredentials = true;
+      if (p === "ollama") hasCredentials = true;
+
+      if (!hasCredentials) {
+        let defaults: ModelInfo[] = [];
+        if (p === "google") {
+          defaults = [
+            { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", capabilities: { vision: true } },
+            { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", capabilities: { vision: true } },
+            { id: "gemini-2.0-flash-exp", name: "Gemini 2.0 Flash Exp", capabilities: { vision: true } },
+          ];
+        } else if (p === "anthropic") {
+          defaults = [
+            { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", capabilities: { vision: true } },
+            { id: "claude-3-opus-20240229", name: "Claude 3 Opus", capabilities: { vision: true } },
+            { id: "claude-3-sonnet-20240229", name: "Claude 3 Sonnet", capabilities: { vision: true } },
+            { id: "claude-3-haiku-20240307", name: "Claude 3 Haiku", capabilities: { vision: true } },
+          ];
+        } else if (p === "openrouter") {
+          defaults = [
+            { id: "google/gemini-flash-1.5", name: "Gemini 1.5 Flash (OR)", capabilities: { vision: true } },
+            { id: "meta-llama/llama-3.2-11b-vision-instruct:free", name: "Llama 3.2 11B Vision Free", capabilities: { vision: true } },
+            { id: "qwen/qwen-2-vl-7b-instruct:free", name: "Qwen 2 VL 7B Free", capabilities: { vision: true } },
+            { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", capabilities: { vision: true } },
+          ];
+        } else if (p === "ollama") {
+          defaults = [
+            { id: "llava:latest", name: "LLaVA", capabilities: { vision: true } },
+            { id: "llama3.2-vision:latest", name: "Llama 3.2 Vision", capabilities: { vision: true } },
+          ];
+        }
+        setProviderModels(prev => ({ ...prev, [p]: defaults }));
+        continue;
+      }
+
+      try {
+        const fetched = await fetchModels(p, {
+          googleApiKey: cfg.googleApiKey,
+          openRouterKey: cfg.openRouterKey,
+          anthropicApiKey: cfg.anthropicApiKey,
+          ollamaUrl: cfg.ollamaUrl,
+        });
+        setProviderModels(prev => ({ ...prev, [p]: fetched }));
+      } catch (err) {
+        console.error(`Failed to fetch models for ${p}`, err);
+        let defaults: ModelInfo[] = [];
+        if (p === "google") {
+          defaults = [
+            { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", capabilities: { vision: true } },
+            { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", capabilities: { vision: true } },
+          ];
+        } else if (p === "anthropic") {
+          defaults = [
+            { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", capabilities: { vision: true } },
+            { id: "claude-3-opus-20240229", name: "Claude 3 Opus", capabilities: { vision: true } },
+          ];
+        } else if (p === "openrouter") {
+          defaults = [
+            { id: "google/gemini-flash-1.5", name: "Gemini 1.5 Flash (OR)", capabilities: { vision: true } },
+            { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", capabilities: { vision: true } },
+          ];
+        } else if (p === "ollama") {
+          defaults = [
+            { id: "llava:latest", name: "LLaVA", capabilities: { vision: true } },
+          ];
+        }
+        setProviderModels(prev => ({ ...prev, [p]: defaults }));
+      }
+    }
+  }, [cfg.googleApiKey, cfg.openRouterKey, cfg.anthropicApiKey, cfg.ollamaUrl]);
+
+  useEffect(() => {
+    fetchAllProviderModels();
+  }, []);
+
+  // Re-evaluate settings every render (reactive)
+  const scenarioChecks = ALL_SCENARIOS.map(s => {
+    const sWithModel = { ...s, selectedModel: getResolvedModelForScenario(s) };
+    return {
+      ...sWithModel,
+      check: verifyScenario(sWithModel)
+    };
+  });
   const activeModel = cfg.selectedModel || "—";
 
   const handleFile = useCallback(async (file: File) => {
@@ -505,25 +626,61 @@ export function Benchmark() {
                   : <Cloud size={12} className="shrink-0 text-primary" />;
 
                 return (
-                  <label key={s.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all cursor-pointer ${!valid ? "opacity-50 cursor-not-allowed border-border bg-secondary/10"
-                    : isEnabled ? "border-primary/40 bg-primary/5"
-                      : "border-border hover:border-primary/30 hover:bg-secondary/30"
-                    }`}>
-                    <input type="checkbox" checked={isEnabled} disabled={!valid}
-                      onChange={e => toggleId(s.id, e.target.checked)}
-                      className="accent-primary w-4 h-4 shrink-0" />
-                    {modeIcon}
-                    <span className="text-sm font-medium flex-1">{s.label}</span>
-                    {valid
-                      ? <span title="Settings OK"><ShieldCheck size={13} className="text-emerald-400 shrink-0" /></span>
-                      : <span title={reason}><ShieldX size={13} className="text-destructive shrink-0" /></span>
-                    }
-                    {!valid && (
-                      <span className="text-[9px] text-destructive/80 max-w-[100px] text-right leading-tight hidden group-hover:block">
-                        {reason}
-                      </span>
+                  <div
+                    key={s.id}
+                    className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2.5 rounded-xl border transition-all ${
+                      !valid ? "opacity-50 border-border bg-secondary/10"
+                        : isEnabled ? "border-primary/40 bg-primary/5"
+                          : "border-border hover:border-primary/30 hover:bg-secondary/30"
+                    }`}
+                  >
+                    <label className={`flex items-center gap-3 flex-1 cursor-pointer select-none`}>
+                      <input
+                        type="checkbox"
+                        checked={isEnabled}
+                        disabled={!valid}
+                        onChange={e => toggleId(s.id, e.target.checked)}
+                        className="accent-primary w-4 h-4 shrink-0"
+                      />
+                      {modeIcon}
+                      <span className="text-sm font-medium">{s.label}</span>
+                      {valid ? (
+                        <ShieldCheck size={13} className="text-emerald-400 shrink-0" />
+                      ) : (
+                        <span title={reason}><ShieldX size={13} className="text-destructive shrink-0" /></span>
+                      )}
+                      {!valid && (
+                        <span className="text-[9px] text-destructive/80 max-w-[120px] leading-tight ml-2">
+                          {reason}
+                        </span>
+                      )}
+                    </label>
+
+                    {valid && isEnabled && (
+                      <div className="flex items-center gap-2 pl-7 sm:pl-0 animate-in fade-in slide-in-from-right-1 duration-200">
+                        <span className="text-[9px] text-muted-foreground uppercase tracking-wider whitespace-nowrap">Model:</span>
+                        <select
+                          value={getResolvedModelForScenario(s)}
+                          onChange={e => {
+                            setScenarioModels(prev => ({ ...prev, [s.id]: e.target.value }));
+                          }}
+                          className="px-2 py-1 bg-secondary text-foreground border border-border rounded-lg text-xs focus:outline-none focus:border-primary transition-all cursor-pointer font-mono max-w-[180px] truncate"
+                        >
+                          {providerModels[s.provider] && providerModels[s.provider].length > 0 ? (
+                            providerModels[s.provider].map(m => (
+                              <option key={m.id} value={m.id}>
+                                {m.name.includes("/") ? m.name.split("/")[1] : m.name}
+                              </option>
+                            ))
+                          ) : (
+                            <option value={getResolvedModelForScenario(s)}>
+                              {getResolvedModelForScenario(s).includes("/") ? getResolvedModelForScenario(s).split("/")[1] : getResolvedModelForScenario(s) || "Default"}
+                            </option>
+                          )}
+                        </select>
+                      </div>
                     )}
-                  </label>
+                  </div>
                 );
               })}
             </div>
