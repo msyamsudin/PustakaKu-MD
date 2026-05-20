@@ -60,7 +60,8 @@ function exportCsv(results: BenchmarkResult[], model: string, pages: number) {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = `benchmark-${pages}pages-${Date.now()}.csv`; a.click();
+  const modeName = results[0]?.isParallel ? "paralel" : "serial";
+  a.href = url; a.download = `benchmark-${pages}pages-${modeName}-${Date.now()}.csv`; a.click();
   URL.revokeObjectURL(url);
 }
 
