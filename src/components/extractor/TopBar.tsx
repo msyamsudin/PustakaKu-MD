@@ -27,6 +27,7 @@ interface Props {
   onDownloadCombined: () => void;
   onToggleBatchMode: () => void;
   onToggleColumnDetection: () => void;
+  onCancel: () => void;
 }
 
 export function TopBar({
@@ -37,7 +38,8 @@ export function TopBar({
   onFileOpen, onCloseDocument, onExtract, onCopy,
   onSave, onBatchDownload, onDownloadCombined,
   onToggleBatchMode,
-  onToggleColumnDetection
+  onToggleColumnDetection,
+  onCancel
 }: Props) {
   return (
     <>
@@ -146,23 +148,25 @@ export function TopBar({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={onExtract}
-            disabled={!previewUrl || isExtracting}
-            className="flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground rounded-md transition-colors font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/85"
-          >
-            {isExtracting ? (
-              <>
-                <div className="w-3.5 h-3.5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin"></div>
-                <span>Extracting…</span>
-              </>
-            ) : (
-              <>
-                <FileText size={16} />
-                <span>Extract</span>
-              </>
-            )}
-          </button>
+          {isExtracting ? (
+            <button
+              onClick={onCancel}
+              className="flex items-center gap-2 px-5 py-2 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-md transition-all font-medium text-sm shadow-[0_0_15px_rgba(244,63,94,0.35)] animate-pulse"
+              title="Cancel document extraction"
+            >
+              <X size={16} />
+              <span>Stop</span>
+            </button>
+          ) : (
+            <button
+              onClick={onExtract}
+              disabled={!previewUrl}
+              className="flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground rounded-md transition-colors font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/85"
+            >
+              <FileText size={16} />
+              <span>Extract</span>
+            </button>
+          )}
 
           <button
             onClick={onCopy}

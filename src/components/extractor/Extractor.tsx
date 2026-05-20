@@ -200,6 +200,7 @@ export function Extractor() {
         onFileOpen={handleFileOpen}
         onCloseDocument={handleCloseDocument}
         onExtract={handleExtract}
+        onCancel={handleCancel}
         onCopy={handleCopy}
         onSave={() => saveSinglePage(markdown, file!, currentPdfPage, getExportCtx())}
         onBatchDownload={() => batchDownload(markdownCache, file!, getExportCtx())}
