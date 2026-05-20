@@ -86,164 +86,157 @@
   background: hsl(var(--muted-foreground) / 0.4);
 }
 
-/* ─── Page-Flip Loader ─────────────────────────── */
+/* ─── Origami Page-Transformer Loader ──────────────── */
 
 .loader-root {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.25rem;
-  padding: 1.5rem 0;
+  gap: 1.5rem;
+  padding: 2rem 0;
   user-select: none;
 }
 
-.loader-scene {
+.origami-container {
   position: relative;
-  width: 9rem;
-  height: 11rem;
-}
-
-/* ── Floating markdown characters ── */
-.loader-particle {
-  position: absolute;
-  bottom: 55%;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-weight: 700;
-  color: hsl(var(--primary) / 0.5);
-  pointer-events: none;
-  animation: floatUpChar 2.5s ease-out infinite;
-  opacity: 0;
-  will-change: transform, opacity;
-}
-
-@keyframes floatUpChar {
-  0% {
-    opacity: 0;
-    transform: translateY(0) scale(0.6) rotate(0deg);
-  }
-  12% {
-    opacity: 0.85;
-  }
-  60% {
-    opacity: 0.4;
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(-72px) scale(1.05) rotate(12deg);
-  }
-}
-
-/* ── Book anchor ── */
-.loader-book-anchor {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  perspective: 800px;
-}
-
-.loader-book {
-  position: relative;
-  width: 6rem;
-  height: 7.5rem;
-  transform-style: preserve-3d;
-}
-
-/* ── Covers (flat, no gradients) ── */
-.loader-cover {
-  position: absolute;
-  inset: 0;
-  border-radius: 0 0.375rem 0.375rem 0;
-  border: 1px solid hsl(var(--primary) / 0.3);
-}
-
-.loader-cover--back {
-  background: hsl(var(--primary) / 0.6);
-  transform: translateZ(-5px);
-}
-
-.loader-cover--front {
+  width: 12rem;
+  height: 12rem;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.125rem;
-  background: hsl(var(--primary));
-  transform: translateZ(5px);
 }
 
-.loader-cover-icon {
-  font-size: 1.5rem;
-  line-height: 1;
-}
-
-.loader-cover-label {
-  font-size: 0.5rem;
-  font-weight: 800;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: hsl(var(--primary-foreground) / 0.7);
-}
-
-/* ── Spine ── */
-.loader-spine {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 7px;
-  border-radius: 0.25rem 0 0 0.25rem;
-  background: hsl(var(--primary) / 0.7);
-  transform: translateZ(0);
-}
-
-/* ── Glow under book (subtle) ── */
-.loader-glow {
-  position: absolute;
-  bottom: -0.625rem;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 5.5rem;
-  height: 0.75rem;
-  border-radius: 50%;
-  background: hsl(var(--primary) / 0.1);
-  filter: blur(8px);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-/* ── Flipping pages ── */
-.loader-page {
-  position: absolute;
-  inset: 3px;
-  border-radius: 0 0.25rem 0.25rem 0;
-  background: hsl(var(--secondary));
-  transform-origin: left center;
-  transition: transform 0.65s cubic-bezier(0.645, 0.045, 0.355, 1);
-  backface-visibility: hidden;
+/* 3D Isometric Projection Stage */
+.origami-stage {
+  position: relative;
+  width: 6.5rem;
+  height: 8rem;
+  transform-style: preserve-3d;
+  transform: rotateX(35deg) rotateY(0deg) rotateZ(-25deg);
   will-change: transform;
 }
 
-.loader-page-lines {
-  padding: 0.625rem;
-  padding-top: 0.75rem;
+/* Base sheet (middle panel) */
+.origami-base {
+  position: absolute;
+  inset: 0;
+  background: hsl(var(--secondary));
+  border: 1.5px solid hsl(var(--primary) / 0.4);
+  border-radius: 0.375rem;
+  box-shadow: 
+    -4px 4px 10px rgba(0, 0, 0, 0.4),
+    inset 0 0 12px hsl(var(--primary) / 0.05);
+  transform-style: preserve-3d;
+}
+
+/* Left & Right Flaps */
+.origami-flap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  background: hsl(var(--secondary));
+  border-radius: 0.25rem;
+  transform-style: preserve-3d;
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.2);
+  will-change: transform;
+}
+
+.origami-flap--left {
+  left: 0;
+  transform-origin: right center;
+  border: 1.5px solid hsl(var(--primary) / 0.4);
+  border-right-width: 0.5px;
+  border-radius: 0.375rem 0 0 0.375rem;
+}
+
+.origami-flap--right {
+  right: 0;
+  transform-origin: left center;
+  border: 1.5px solid hsl(var(--primary) / 0.4);
+  border-left-width: 0.5px;
+  border-radius: 0 0.375rem 0.375rem 0;
+}
+
+/* Fake line details on the origami folds */
+.origami-lines {
+  position: absolute;
+  inset: 0.5rem;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 0.375rem;
+  pointer-events: none;
 }
 
-.loader-line {
-  height: 2.5px;
+.origami-line {
+  height: 2px;
   border-radius: 9999px;
-  background: hsl(var(--muted-foreground) / 0.15);
+  background: hsl(var(--muted-foreground) / 0.18);
 }
 
-.loader-line--heading {
-  background: hsl(var(--primary) / 0.35);
+.origami-line--heading {
+  height: 3.5px;
+  background: hsl(var(--primary) / 0.5);
+  margin-bottom: 0.125rem;
+}
+
+.origami-line--accent {
+  background: hsl(var(--accent) / 0.4);
+}
+
+/* Sweeping laser scanner beam */
+.origami-scanline {
+  position: absolute;
+  left: -10%;
+  right: -10%;
   height: 3px;
+  background: linear-gradient(
+    90deg, 
+    transparent 0%, 
+    hsl(var(--primary)) 30%, 
+    #ffffff 50%, 
+    hsl(var(--primary)) 70%, 
+    transparent 100%
+  );
+  box-shadow: 0 0 12px hsl(var(--primary));
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 50;
+  will-change: transform, opacity;
 }
 
-/* ── Status text ── */
+/* Floating markdown characters */
+.origami-particle {
+  position: absolute;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 800;
+  color: hsl(var(--primary));
+  filter: drop-shadow(0 0 4px hsl(var(--primary) / 0.5));
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.origami-particle--ruby {
+  color: hsl(var(--accent));
+  filter: drop-shadow(0 0 4px hsl(var(--accent) / 0.5));
+}
+
+/* Base glow pulse under the isometric folds */
+.origami-glow {
+  position: absolute;
+  bottom: -0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 7.5rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: hsl(var(--primary) / 0.15);
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+/* ── Status Text ── */
 .loader-status {
   display: flex;
   flex-direction: column;
@@ -253,30 +246,20 @@
 
 .loader-title {
   font-size: 0.8125rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-weight: 800;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: hsl(var(--primary));
+  text-shadow: 0 0 8px hsl(var(--primary) / 0.2);
 }
 
 .loader-subtitle {
   font-size: 0.75rem;
   color: hsl(var(--muted-foreground));
-  animation: fadeInStatus 0.4s ease-out;
+  font-weight: 500;
+  min-height: 1.25rem;
 }
 
-@keyframes fadeInStatus {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ── Bouncing dots ── */
 .loader-dots {
   display: flex;
   gap: 0.375rem;
@@ -288,65 +271,21 @@
   height: 5px;
   border-radius: 50%;
   background: hsl(var(--primary));
-  animation: bounce 1s ease-in-out infinite;
-}
-
-@keyframes bounce {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-}
-
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-@keyframes pulse-glow {
-  0%, 100% { 
-    opacity: 1;
-    filter: drop-shadow(0 0 2px hsl(var(--primary) / 0.4));
-  }
-  50% { 
-    opacity: 0.7;
-    filter: drop-shadow(0 0 8px hsl(var(--primary) / 0.8));
-  }
-}
-
-.animate-spin-slow {
-  animation: spin-slow 8s linear infinite;
-}
-
-.animate-shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    hsl(var(--primary) / 0.1) 50%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite linear;
 }
 
 .animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+  animation: pulseGlow 2.5s ease-in-out infinite;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.animate-in.fade-in {
-  animation: fadeIn 300ms ease-out forwards;
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 0.6;
+    transform: translateX(-50%) scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.1);
+  }
 }
 
 /* ─── Premium Markdown Viewer Styles ──────────────── */
