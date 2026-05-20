@@ -191,6 +191,7 @@ function ResultsDisplay({ results, isRunning, bestCpsId, bestCharsId }: {
 }) {
   const [isZoomed, setIsZoomed] = useState(false);
   const firstResult = results[0];
+  const cfg = (() => { try { return JSON.parse(localStorage.getItem("pustakaku-settings") || "{}"); } catch { return {} as any; } })();
   const autoAnalysisOn = firstResult?.enableColumnDetection !== false;
 
   const TableHeader = ({ isCompact }: { isCompact: boolean }) => (
@@ -253,6 +254,11 @@ function ResultsDisplay({ results, isRunning, bestCpsId, bestCharsId }: {
           <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border leading-none ${firstResult?.enableLoopDetection !== false ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-muted-foreground bg-secondary border-border"}`}>
             Loop Detection: {firstResult?.enableLoopDetection !== false ? "ON" : "OFF"}
           </span>
+          {firstResult && (
+            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border leading-none ${firstResult.isParallel ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : "text-muted-foreground bg-secondary border-border"}`}>
+              Mode: {firstResult.isParallel ? `Parallel (max ${cfg.batchConcurrency || 3} pgs)` : "Sequential"}
+            </span>
+          )}
           {isRunning && (
             <span className="ml-auto inline-flex items-center gap-1.5 text-[9px] text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 animate-pulse">
               $ monitoring_active...
@@ -301,6 +307,11 @@ function ResultsDisplay({ results, isRunning, bestCpsId, bestCharsId }: {
                 <span className={`text-[10px] font-mono px-3 py-1 rounded border leading-none ${firstResult?.enableLoopDetection !== false ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-muted-foreground bg-white/5 border-white/5"}`}>
                   Loop Detection: {firstResult?.enableLoopDetection !== false ? "ON" : "OFF"}
                 </span>
+                {firstResult && (
+                  <span className={`text-[10px] font-mono px-3 py-1 rounded border leading-none ${firstResult.isParallel ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : "text-muted-foreground bg-white/5 border-white/5"}`}>
+                    Execution Mode: {firstResult.isParallel ? `Parallel (max ${cfg.batchConcurrency || 3} pgs)` : "Sequential"}
+                  </span>
+                )}
               </div>
               <button
                 onClick={() => setIsZoomed(false)}
@@ -548,6 +559,9 @@ export function Benchmark() {
             <span className={`text-[10px] font-mono px-2 py-0.5 rounded border leading-none ${cfg.enableColumnDetection !== false ? "text-sky-400 bg-sky-500/10 border-sky-500/20" : "text-muted-foreground bg-secondary border-border"}`}>
               Layout Analysis: {cfg.enableColumnDetection !== false ? "ON" : "OFF"}
             </span>
+            <span className={`text-[10px] font-mono px-2 py-0.5 rounded border leading-none ${isParallel ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : "text-muted-foreground bg-secondary border-border"}`}>
+              Mode: {isParallel ? `Parallel (max ${cfg.batchConcurrency || 3} pgs)` : "Sequential"}
+            </span>
           </div>
         </div>
 
@@ -713,7 +727,7 @@ export function Benchmark() {
                     <input type="radio" checked={isParallel} onChange={() => setIsParallel(true)} className="accent-primary shrink-0" />
                     <div className="flex flex-col">
                       <span className="text-sm font-bold">Parallel</span>
-                      <span className="text-[10px] text-muted-foreground">Concurrent</span>
+                      <span className="text-[10px] text-muted-foreground">Concurrent ({cfg.batchConcurrency || 3} pgs)</span>
                     </div>
                   </label>
                 </div>
@@ -770,11 +784,18 @@ export function Benchmark() {
         {/* Actions */}
         <div className="px-6 pb-6 flex items-center gap-3 flex-wrap">
           {!isRunning ? (
-            <button onClick={handleStart}
-              disabled={!pdfFile || pageNums.length === 0 || enabledIds.size === 0}
-              className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold uppercase tracking-wider transition-all hover:bg-primary/90 hover:-translate-y-0.5 disabled:opacity-40 disabled:translate-y-0 shadow-lg shadow-primary/20">
-              <FlaskConical size={15} /> Start Benchmark
-            </button>
+            <div className="flex items-center gap-4 flex-wrap">
+              <button onClick={handleStart}
+                disabled={!pdfFile || pageNums.length === 0 || enabledIds.size === 0}
+                className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold uppercase tracking-wider transition-all hover:bg-primary/90 hover:-translate-y-0.5 disabled:opacity-40 disabled:translate-y-0 shadow-lg shadow-primary/20">
+                <FlaskConical size={15} /> Start Benchmark
+              </button>
+              {isParallel && pdfFile && pageNums.length > 0 && (
+                <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg font-mono">
+                  Info: {pageNums.length} halaman akan diproses paralel (maks. {Math.min(cfg.batchConcurrency || 3, pageNums.length)} halaman secara bersamaan).
+                </span>
+              )}
+            </div>
           ) : (
             <button onClick={stopBenchmark}
               className="flex items-center gap-2 px-6 py-2.5 bg-destructive/10 text-destructive border border-destructive/30 rounded-xl text-sm font-bold uppercase tracking-wider hover:bg-destructive/20">

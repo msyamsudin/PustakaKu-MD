@@ -457,15 +457,25 @@ export function useBenchmark(): UseBenchmarkReturn {
           };
 
           if (options?.isParallel) {
-            logger.info(`[Benchmark] ${scenario.label} - Running pages in PARALLEL`);
+            const concurrency = cfg.batchConcurrency || 3;
+            logger.info(`[Benchmark] ${scenario.label} - Running pages in PARALLEL with concurrency ${concurrency}`);
             patchResult(scenario.id, { currentTask: "Initializing parallel tasks...", taskStartTime: performance.now() });
             
-            // Stagger parallel tasks slightly to avoid sudden resource spikes
-            const tasks = Array.from({ length: pageNums.length }, async (_, i) => {
+            const queue = Array.from({ length: pageNums.length }, (_, i) => i);
+            
+            const worker = async () => {
+              while (queue.length > 0 && !stopRef.current && !abortRef.current?.signal.aborted) {
+                const pi = queue.shift()!;
+                await processPage(pi);
+              }
+            };
+            
+            // Stagger worker initialization slightly to avoid simultaneous initial PDF rendering spikes
+            const workers = Array.from({ length: Math.min(concurrency, pageNums.length) }, async (_, i) => {
               if (i > 0) await new Promise(r => setTimeout(r, i * STAGGER_MS));
-              return processPage(i);
+              return worker();
             });
-            await Promise.all(tasks);
+            await Promise.all(workers);
           } else {
             for (let pi = 0; pi < pageNums.length; pi++) {
               await processPage(pi);
