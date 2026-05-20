@@ -1,4 +1,6 @@
-import { UploadCloud, X, Zap, FileText, Copy, Check, Download, Coins, Timer, HardDrive, Cloud, Columns2 } from "lucide-react";
+import { UploadCloud, X, Zap, FileText, Copy, Check, Download, Coins, Timer, HardDrive, Cloud, Columns2, AlertTriangle } from "lucide-react";
+import { useMemo } from "react";
+import { analyzeAiResponseLoop } from "../../lib/loopDetector";
 import type { AppFile, AppConfig } from "../../lib/utils/types";
 import type { ExtractionResult } from "../../lib/api";
 import type { ExtractionMethodInfo } from "../../hooks/useExtraction";
@@ -41,6 +43,15 @@ export function TopBar({
   onToggleColumnDetection,
   onCancel
 }: Props) {
+  const loopInfo = useMemo(() => analyzeAiResponseLoop(markdown), [markdown]);
+
+  const diversityColorClass = useMemo(() => {
+    const ratio = loopInfo.lzwRatio;
+    if (ratio > 0.35) return "border-green-500/20 bg-green-500/5 text-green-400";
+    if (ratio > 0.22) return "border-yellow-500/20 bg-yellow-500/5 text-yellow-400";
+    return "border-red-500/30 bg-red-500/10 text-red-400 animate-pulse";
+  }, [loopInfo.lzwRatio]);
+
   return (
     <>
       <div className="flex justify-between items-center bg-card p-3 rounded-lg border border-border">
@@ -122,6 +133,21 @@ export function TopBar({
               )}
             </div>
           )}
+
+          {isExtracting && markdown.length > 20 && (
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-[11px] font-semibold transition-all ${diversityColorClass}`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${loopInfo.lzwRatio > 0.35 ? "bg-green-400" : loopInfo.lzwRatio > 0.22 ? "bg-yellow-400" : "bg-red-400 animate-ping"}`}></div>
+              <span>Diversity: {(loopInfo.lzwRatio * 100).toFixed(0)}%</span>
+            </div>
+          )}
+
+          {loopInfo.isLooping && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-red-500/30 bg-red-500/10 text-red-400 text-[11px] font-bold animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.25)]">
+              <AlertTriangle size={12} className="text-red-400 animate-bounce" />
+              <span>Loop: {loopInfo.reason}</span>
+            </div>
+          )}
+
           <button
             onClick={onToggleBatchMode}
             className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all border ${(showPageGrid || showMarkdownGrid)

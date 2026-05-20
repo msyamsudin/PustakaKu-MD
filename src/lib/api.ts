@@ -1,5 +1,6 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import { logger } from "./logger";
+import { isAiResponseLooping, LoopDetectedError } from "./loopDetector";
 
 export type Provider = "ollama" | "openrouter" | "google" | "anthropic";
 
@@ -98,7 +99,7 @@ async function withRetry<T>(
       return await fn();
     } catch (error: any) {
       lastError = error;
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || error.name === 'LoopDetectedError') {
         throw error;
       }
       if (attempt < maxRetries - 1) {
@@ -228,6 +229,9 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
             if (parsed.response) {
               accumulatedMarkdown += parsed.response;
               if (options.onChunk) options.onChunk(parsed.response);
+              if (isAiResponseLooping(accumulatedMarkdown)) {
+                throw new LoopDetectedError();
+              }
             }
             if (parsed.done) {
               const totalTokens = (parsed.prompt_eval_count || 0) + (parsed.eval_count || 0);
@@ -324,6 +328,9 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
             if (content) {
               accumulatedMarkdown += content;
               if (options.onChunk) options.onChunk(content);
+              if (isAiResponseLooping(accumulatedMarkdown)) {
+                throw new LoopDetectedError();
+              }
             }
             if (parsed.usage) {
               // OpenRouter sometimes uses total_cost, sometimes cost
@@ -496,6 +503,9 @@ export async function extractMarkdown(options: ExtractionOptions): Promise<Extra
             if (content) {
               accumulatedMarkdown += content;
               if (options.onChunk) options.onChunk(content);
+              if (isAiResponseLooping(accumulatedMarkdown)) {
+                throw new LoopDetectedError();
+              }
             }
             if (parsed.usageMetadata) {
               usage = {
